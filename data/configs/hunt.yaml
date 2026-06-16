@@ -1,0 +1,113 @@
+target_processes:
+  - name: "HuntGame.exe"
+    check_path: false
+  - name: "hunt.exe"
+    check_path: true
+  - name: "WinMTR-Report.exe"
+    check_path: true
+  - name: "EasyAntiCheat_EOS_Setup.exe"
+    check_path: true
+  - name: "nvcontainer.exe"
+    check_path: false
+
+cloudflare_domains:
+  - "*.cloudflare-ech.com"
+  - "*.encryptedsni.com"
+  - "*.cloudflareclient.com"
+  - "*.cloudflareinsights.com"
+  - "*.cloudflareok.com"
+  - "*.cloudflareaccess.com"
+  - "*.cloudflareportal.com"
+  - "*.cloudflarepreview.com"
+  - "*.cloudflaressl.com"
+  - "*.cloudflarestatus.com"
+  - "*.cloudflarestorage.com"
+  - "*.cloudflare.com"
+  - "*.cloudflare.net"
+  - "*.cloudflare.tv"
+  - "*.cloudflare-quic.com"
+  - "*.cloudflare-esni.com"
+  - "*.cloudflarewarp.com"
+  - "*.cloudflarestream.com"
+  - "*.cfl.re"
+  - "*.cloudflare-dns.com"
+  - "*.one.one.one.one"
+  - "*.isbgpsafeyet.com"
+  - "*.pages.dev"
+  - "*.trycloudflare.com"
+  - "*.amazon.com"
+  - "*.videodelivery.net"
+  - "*.warp.plus"
+  - "*.workers.dev"
+
+include_domains:
+  - "*.amazonaws.com"
+  - "*.awsapps.com"
+  - "*.amazon-adsystem.com"
+  - "*.easyanticheat.net"
+  - "*.vivox.com"
+  - "*.vivox.net"
+  - "*.crytek.com"
+  - "*.cryengine.com"
+
+exclude_domains:
+  - "*.api.aws"
+  - "*.cloudflarebolt.com"
+  - "*.cloudflarepartners.com"
+  - "*.cloudflareresolve.com"
+  - "*.cloudflaretest.com"
+  - "*.cloudflare-dm-cmpimg.com"
+  - "*.cloudflare-ipfs.com"
+  - "*.cloudflare-terms-of-service-abuse.com"
+  - "*.cloudflare-gateway.com"
+  - "*.cloudflareapps.com"
+  - "*.pacloudflare.com"
+  - "*.sn-cloudflare.com"
+  - "*.argotunnel.com"
+  - "*.cfargotunnel.com"
+  - "*.every1dns.net"
+  - "*.a2z.com"
+  - "*.akamaized.net"
+  - "*.awsstatic.com"
+  - "*.ssl-images-amazon.com"
+  - "*.amazongamelift.com"
+  - "*.akamaitechnologies.com"
+  - "*.microsoft.com"
+  - "*.visualstudio.com"
+  - "*.windows.net"
+  - "*.fastly.com"
+  - "*.cloudapp.net"
+  - "*.azmk8s.io"
+  - "*.arin.net"
+
+include_ips: []
+exclude_ips: []
+
+ports:
+  tcp: [61088, "20000-20099", 3074, 3478, "4379-4380", "27000-27050"]
+  udp: [61088, "20000-20099", 3074, 3478, "4379-4380", "27000-27050"]
+
+lists:
+  ip_file: "ipset-all.txt"
+  domain_file: "list-general-user.txt"
+  general_domain_file: "list-general.txt"
+  exclude_ip_file: "ipset-exclude-user.txt"
+  exclude_domain_file: "list-exclude-user.txt"
+  session_ip_file: "fix.txt"
+
+scan_interval: 0.1
+logged_connections_max: 5000
+dns_timeout: 2.0
+
+dns_resolve_statuses:
+  - "SYN_SENT"
+
+console:
+  max_proc_width: 20
+  max_ip_width: 16
+  max_port_width: 6
+  max_domain_width: 30
+
+color_console: true
+skip_local_ips: true
+highlight_style: "BRIGHT_WHITE"

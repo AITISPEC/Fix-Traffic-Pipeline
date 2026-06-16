@@ -1,0 +1,21 @@
+# Метаданные фиксов – обновляются через GitHub (папка config)
+# Порты и остальные настройки находятся в отдельных {game}.yaml
+
+games:
+  - id: hunt
+    name: "Hunt: Showdown 1896"
+    config_url: "https://raw.githubusercontent.com/AITISPEC/Helpful/main/configs/hunt.yaml"
+    warp_supported: true
+    version: 1
+
+  - id: roblox
+    name: "Roblox"
+    config_url: "https://raw.githubusercontent.com/AITISPEC/Helpful/main/configs/roblox.yaml"
+    warp_supported: true
+    version: 1
+
+  - id: apex
+    name: "Apex Legends"
+    config_url: "https://raw.githubusercontent.com/AITISPEC/Helpful/main/configs/apex.yaml"
+    warp_supported: true
+    version: 1
