@@ -1,0 +1,126 @@
+target_processes:
+  - name: "RobloxPlayerBeta.exe"
+    check_path: false
+  - name: "RobloxCrashHandler.exe"
+    check_path: false
+  - name: "gamelaunchhelper.exe"
+    check_path: true
+  - name: "nvcontainer.exe"
+    check_path: false
+
+cloudflare_domains:
+  - "*.cloudflare-ech.com"
+  - "*.encryptedsni.com"
+  - "*.cloudflareclient.com"
+  - "*.cloudflareinsights.com"
+  - "*.cloudflareok.com"
+  - "*.cloudflareaccess.com"
+  - "*.cloudflareportal.com"
+  - "*.cloudflarepreview.com"
+  - "*.cloudflaressl.com"
+  - "*.cloudflarestatus.com"
+  - "*.cloudflarestorage.com"
+  - "*.cloudflare.com"
+  - "*.cloudflare.net"
+  - "*.cloudflare.tv"
+  - "*.cloudflare-quic.com"
+  - "*.cloudflare-esni.com"
+  - "*.cloudflarewarp.com"
+  - "*.cloudflarestream.com"
+  - "*.cfl.re"
+  - "*.cloudflare-dns.com"
+  - "*.one.one.one.one"
+  - "*.isbgpsafeyet.com"
+  - "*.pages.dev"
+  - "*.trycloudflare.com"
+  - "*.amazon.com"
+  - "*.videodelivery.net"
+  - "*.warp.plus"
+  - "*.workers.dev"
+  - "*.googleusercontent.com"
+
+include_domains:
+  - "*.awsapps.com"
+  - "*.amazon-adsystem.com"
+  - "*.amazonaws.com"
+  - "*.secure.footprint.net"
+  - "*.secure.llnwd.net"
+  - "*.stun.services.mozilla.com"
+  - "*.turn.twilio.com"
+  - "*.cloudfront.net"
+  - "*.awsstatic.com"
+  - "*.ssl-images-amazon.com"
+  - "*.amazongamelift.com"
+  - "*.akamaihd.net"
+  - "*.roblox.qq.com"
+  - "*.rbxcdn.net"
+  - "*.rbxlabs.com"
+  - "*.rbx.com"
+  - "*.rbxcdn.com"
+  - "*.rbxcdn.co"
+  - "*.rbxcdn.me"
+  - "*.rbxcdn.org"
+  - "*.rbxcdn.tech"
+  - "*.robloxlabs.com"
+  - "*.roblox.com"
+  - "*.rbxcdn.us"
+  - "*.rbxcdn.xyz"
+  - "*.roblox.cn"
+  - "*.robloxapp.com"
+  - "*.robloxgames.com"
+
+exclude_domains:
+  - "*.akamaized.net"
+  - "*.akamaitechnologies.com"
+  - "*.microsoft.com"
+  - "*.visualstudio.com"
+  - "*.windows.net"
+  - "*.fastly.com"
+  - "*.cloudapp.net"
+  - "*.azmk8s.io"
+  - "*.arin.net"
+
+include_ips: []
+exclude_ips: []
+
+pass_ips:
+  - "199.46.0.0/16"
+  - "128.116.0.0/16"
+  - "151.101.0.0/16"
+  - "52.252.0.0/16"
+  - "20.201.0.0/16"
+  - "20.109.0.0/16"
+  - "20.110.0.0/16"
+  - "20.94.0.0/16"
+  - "4.209.0.0/16"
+  - "4.207.0.0/16"
+
+ports:
+  tcp: [80, 443, "3478-3480"]
+  udp: ["3478-3480", "49152-65535"]
+
+lists:
+  ip_file: "ipset-all.txt"
+  domain_file: "list-general-user.txt"
+  general_domain_file: "list-general.txt"
+  exclude_ip_file: "ipset-exclude-user.txt"
+  exclude_domain_file: "list-exclude-user.txt"
+  session_ip_file: "fix.txt"
+
+scan_interval: 0.02
+logged_connections_max: 500
+dns_timeout: 2.0
+
+dns_resolve_statuses:
+  - "SYN_SENT"
+  - "ESTABLISHED"
+
+console:
+  max_proc_width: 21
+  max_ip_width: 16
+  max_port_width: 6
+  max_domain_width: 30
+
+color_console: true
+skip_local_ips: true
+highlight_style: "BRIGHT_WHITE"

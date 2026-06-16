@@ -18,5 +18,8 @@ namespace PlatformLauncher.Models
 
         [YamlMember(Alias = "version")]
         public int Version { get; set; }
+
+        [YamlMember(Alias = "installed")]
+        public bool Installed { get; set; } = false;
     }
 }

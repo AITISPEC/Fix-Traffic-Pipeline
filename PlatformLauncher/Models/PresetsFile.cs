@@ -6,6 +6,6 @@ namespace PlatformLauncher.Models
     public class PresetsFile
     {
         [YamlMember(Alias = "games")]
-        public List<GamePreset> Games { get; set; }
+        public List<GamePreset> Games { get; set; } = new List<GamePreset>();
     }
 }

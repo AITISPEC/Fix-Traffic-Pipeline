@@ -9,7 +9,7 @@ namespace PlatformLauncher.Services
     public static class SettingsManager
     {
         private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user_settings.json");
-        private static Dictionary<string, bool> _settings = new();
+        private static Dictionary<string, bool> _warpSettings = new();
         private static readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
 
         static SettingsManager()
@@ -24,17 +24,16 @@ namespace PlatformLauncher.Services
             {
                 if (!File.Exists(SettingsPath))
                 {
-                    _settings = new Dictionary<string, bool>();
-                    Save();
-                    return;
+                    _warpSettings = new Dictionary<string, bool>();
+                    return; // НЕ вызываем Save() здесь
                 }
                 var json = File.ReadAllText(SettingsPath);
-                _settings = JsonSerializer.Deserialize<Dictionary<string, bool>>(json) ?? new();
+                _warpSettings = JsonSerializer.Deserialize<Dictionary<string, bool>>(json) ?? new();
             }
             catch (Exception ex)
             {
                 LauncherLogger.Error($"Ошибка загрузки настроек: {ex.Message}");
-                _settings = new();
+                _warpSettings = new();
             }
             finally
             {
@@ -47,7 +46,7 @@ namespace PlatformLauncher.Services
             _lock.EnterWriteLock();
             try
             {
-                var json = JsonSerializer.Serialize(_settings);
+                var json = JsonSerializer.Serialize(_warpSettings);
                 File.WriteAllText(SettingsPath, json);
             }
             catch (Exception ex)
@@ -60,12 +59,13 @@ namespace PlatformLauncher.Services
             }
         }
 
-        private static bool GetBool(string key)
+        public static bool GetWarpEnabled(string gameId)
         {
+            var key = $"WarpEnabled_{gameId}";
             _lock.EnterReadLock();
             try
             {
-                return _settings.TryGetValue(key, out bool value) && value;
+                return _warpSettings.TryGetValue(key, out bool value) && value;
             }
             finally
             {
@@ -73,12 +73,13 @@ namespace PlatformLauncher.Services
             }
         }
 
-        private static void SetBool(string key, bool value)
+        public static void SetWarpEnabled(string gameId, bool enabled)
         {
+            var key = $"WarpEnabled_{gameId}";
             _lock.EnterWriteLock();
             try
             {
-                _settings[key] = value;
+                _warpSettings[key] = enabled;
                 Save();
             }
             finally
@@ -86,10 +87,5 @@ namespace PlatformLauncher.Services
                 _lock.ExitWriteLock();
             }
         }
-
-        public static bool GetWarpEnabled(string gameId) => GetBool($"WarpEnabled_{gameId}");
-        public static void SetWarpEnabled(string gameId, bool enabled) => SetBool($"WarpEnabled_{gameId}", enabled);
-        public static bool IsGameInstalled(string gameId) => GetBool($"Installed_{gameId}");
-        public static void SetGameInstalled(string gameId, bool installed) => SetBool($"Installed_{gameId}", installed);
     }
 }

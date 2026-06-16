@@ -21,6 +21,8 @@ namespace PlatformLauncher.Models
         public bool ColorConsole { get; set; }
         public bool SkipLocalIps { get; set; }
         public string HighlightStyle { get; set; }
+        public bool? WarpSupported { get; set; } = false;
+        public int? Version { get; set; } = 1;
     }
 
     public class TargetProcess

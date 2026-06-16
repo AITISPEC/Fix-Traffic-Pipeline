@@ -45,6 +45,15 @@ namespace PlatformLauncher
                         "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
+                // Если presets.yaml отсутствует – создаём пустой
+                string presetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
+                if (!File.Exists(presetsPath))
+                {
+                    // Создаём пустой файл
+                    UpdateService.SavePresetsFile(new PresetsFile());
+                    AppendConsoleOutput("Создан пустой presets.yaml");
+                }
+
                 _listsPath = await Task.Run(() => WinwsLocator.FindListsPath());
                 if (string.IsNullOrEmpty(_listsPath))
                 {
@@ -84,7 +93,6 @@ namespace PlatformLauncher
                 var lastBackupDir = BackupManager.GetLatestBackupForAnyGame(backupRoot);
                 if (lastBackupDir == null) return;
 
-                // Если путь не определён – предложить выбрать
                 if (string.IsNullOrEmpty(_listsPath))
                 {
                     var result = MessageBox.Show(
@@ -141,24 +149,8 @@ namespace PlatformLauncher
         private async Task LoadPresets()
         {
             StatusBarText.Text = "Загрузка пресетов...";
-            var presetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
-
-            AppendConsoleOutput($"🔍 Ищем presets по пути: {presetsPath}");
-            AppendConsoleOutput($"📁 Файл существует? {File.Exists(presetsPath)}");
-
-            if (!File.Exists(presetsPath))
-            {
-                AppendConsoleOutput("⚠️ Файл не найден, пробуем обновить...");
-                bool ok = await UpdateService.UpdatePresetsAsync(presetsPath);
-                if (!ok && !File.Exists(presetsPath))
-                {
-                    UpdateService.CreateDefaultPresets(presetsPath);
-                }
-            }
-
-            var presets = UpdateService.LoadPresets(presetsPath);
+            var presets = UpdateService.LoadPresets();
             AppendConsoleOutput($"📊 Загружено пресетов: {presets.Count}");
-
             _allPresets.Clear();
             foreach (var p in presets)
                 _allPresets.Add(p);
@@ -170,14 +162,19 @@ namespace PlatformLauncher
         {
             bool onlyInstalled = ShowOnlyInstalledCheckBox.IsChecked == true;
             var filtered = _allPresets
-                .Where(p => !onlyInstalled || IsInstalled(p.Id))
-                .OrderBy(p => IsInstalled(p.Id) ? 0 : 1) // установленные сверху
+                .Where(p => !onlyInstalled || p.Installed)
+                .OrderBy(p => p.Installed ? 0 : 1)
                 .ThenBy(p => p.Name)
                 .ToList();
             GamesListBox.ItemsSource = filtered;
         }
 
-        private bool IsInstalled(string gameId) => SettingsManager.IsGameInstalled(gameId);
+        private bool IsInstalled(string gameId)
+        {
+            var presets = UpdateService.LoadPresets();
+            var p = presets.Find(g => g.Id == gameId);
+            return p != null && p.Installed;
+        }
 
         private void GamesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -196,7 +193,7 @@ namespace PlatformLauncher
                 return;
             }
 
-            bool installed = IsInstalled(_selectedGame.Id);
+            bool installed = _selectedGame.Installed;
             if (!installed)
             {
                 StartButton.Content = "Установить";
@@ -213,7 +210,15 @@ namespace PlatformLauncher
 
         private async void RefreshPresetsButton_Click(object sender, RoutedEventArgs e)
         {
+            StatusBarText.Text = "Синхронизация с GitHub...";
+            AppendConsoleOutput("⏳ Синхронизация пресетов...");
+            bool ok = await UpdateService.SyncFromGitHubAsync();
+            if (ok)
+                AppendConsoleOutput("✅ Синхронизация завершена");
+            else
+                AppendConsoleOutput("❌ Ошибка синхронизации (проверьте лог для деталей)");
             await LoadPresets();
+            StatusBarText.Text = "Готово";
         }
 
         private void OpenListsButton_Click(object sender, RoutedEventArgs e)
@@ -250,11 +255,10 @@ namespace PlatformLauncher
                     catch (UnauthorizedAccessException ex)
                     {
                         MessageBox.Show(ex.Message, "Недостаточно прав", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        // правила не добавлены, но установка продолжается
                     }
                 }
-                SettingsManager.SetGameInstalled(preset.Id, true);
-                FilterGames();
+                // Перезагружаем список, чтобы обновить статус installed
+                await LoadPresets();
                 UpdateStartButtonText();
                 MessageBox.Show($"Фикс {preset.Name} установлен", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -288,12 +292,8 @@ namespace PlatformLauncher
                 }
             }
 
-            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{preset.Id}.yaml");
-            if (File.Exists(configPath))
-                File.Delete(configPath);
-
-            SettingsManager.SetGameInstalled(preset.Id, false);
-            FilterGames();
+            UpdateService.UninstallGame(preset.Id);
+            await LoadPresets();
             UpdateStartButtonText();
             MessageBox.Show($"Фикс {preset.Name} удалён", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -313,7 +313,7 @@ namespace PlatformLauncher
         {
             if (_selectedGame == null) return;
 
-            if (!IsInstalled(_selectedGame.Id))
+            if (!_selectedGame.Installed)
             {
                 await InstallGame(_selectedGame);
                 return;
@@ -408,7 +408,7 @@ namespace PlatformLauncher
                 return;
             }
             menu.Visibility = Visibility.Visible;
-            bool installed = IsInstalled(preset.Id);
+            bool installed = preset.Installed;
             foreach (MenuItem item in menu.Items)
             {
                 if (item.Header?.ToString() == "Установить")
