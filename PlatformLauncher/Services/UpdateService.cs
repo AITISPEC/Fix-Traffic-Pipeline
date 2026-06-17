@@ -3,10 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading.Tasks;
 using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace PlatformLauncher.Services
 {
@@ -14,11 +12,11 @@ namespace PlatformLauncher.Services
     {
         private static readonly HttpClient _httpClient = new HttpClient();
         private static readonly string PresetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
-        private const string GitHubApiUrl = "https://api.github.com/repos/AITISPEC/Fix-Traffic-Pipeline/contents/data/configs";
+        private const string RemotePresetsUrl = "https://raw.githubusercontent.com/AITISPEC/Fix-Traffic-Pipeline/main/data/configs/presets.yaml";
 
         static UpdateService()
         {
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "PlatformLauncher");
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "PlatformLauncher/1.0");
         }
 
         public static PresetsFile LoadPresetsFile()
@@ -63,119 +61,85 @@ namespace PlatformLauncher.Services
             return file.Games;
         }
 
+        /// <summary>
+        /// Синхронизирует локальный presets.yaml с удалённым (скачивает по raw-ссылке).
+        /// Сохраняет статус Installed для существующих игр.
+        /// </summary>
         public static async Task<bool> SyncFromGitHubAsync()
         {
             try
             {
-                LauncherLogger.Info("Начинаем синхронизацию пресетов с GitHub...");
+                LauncherLogger.Info("Начинаем синхронизацию пресетов (загрузка presets.yaml)...");
+                using var response = await _httpClient.GetAsync(RemotePresetsUrl);
+                if (!response.IsSuccessStatusCode)
+                {
+                    string error = $"Ошибка загрузки presets.yaml: {response.StatusCode}";
+                    LauncherLogger.Error(error);
+                    // При ошибке (404 и т.п.) локальные пресеты не изменяем
+                    return false;
+                }
+
+                var remoteYaml = await response.Content.ReadAsStringAsync();
+                LauncherLogger.Info($"Получен ответ, длина: {remoteYaml.Length} символов");
+
+                var deserializer = new DeserializerBuilder().Build();
+                PresetsFile remotePresets;
+                try
+                {
+                    remotePresets = deserializer.Deserialize<PresetsFile>(remoteYaml);
+                }
+                catch (Exception ex)
+                {
+                    LauncherLogger.Error($"Ошибка десериализации удалённого presets.yaml: {ex.Message}");
+                    return false;
+                }
+
+                if (remotePresets?.Games == null || remotePresets.Games.Count == 0)
+                {
+                    LauncherLogger.Warning("Удалённый presets.yaml не содержит списка игр или пуст. Локальные пресеты не изменены.");
+                    return true;
+                }
+
                 var localPresets = LoadPresetsFile();
                 var localDict = new Dictionary<string, GamePreset>();
                 foreach (var g in localPresets.Games)
                     localDict[g.Id] = g;
 
-                // Добавляем правильные заголовки
-                using var request = new HttpRequestMessage(HttpMethod.Get, GitHubApiUrl);
-                request.Headers.Add("Accept", "application/vnd.github.v3+json");
-                request.Headers.Add("User-Agent", "PlatformLauncher/1.0");
-
-                var response = await _httpClient.SendAsync(request);
-                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    string error = "Доступ к GitHub API запрещён (403). Возможно, превышен лимит запросов (60/час). Попробуйте позже.";
-                    LauncherLogger.Error(error);
-                    return false;
-                }
-                if (!response.IsSuccessStatusCode)
-                {
-                    string error = $"GitHub API вернул ошибку: {response.StatusCode}";
-                    LauncherLogger.Error(error);
-                    return false;
-                }
-
-                var json = await response.Content.ReadAsStringAsync();
-                var files = JsonSerializer.Deserialize<List<GitHubFileInfo>>(json);
-                if (files == null)
-                {
-                    LauncherLogger.Error("Не удалось десериализовать ответ API");
-                    return false;
-                }
-
-                if (files.Count == 0)
-                {
-                    LauncherLogger.Warning("GitHub папка data/configs пуста, локальные пресеты не изменяются");
-                    return true;
-                }
-
                 bool changed = false;
-                foreach (var file in files)
+                foreach (var remoteGame in remotePresets.Games)
                 {
-                    if (file.Type != "file" || !file.Name.EndsWith(".yaml") || file.Name == "presets.yaml")
-                        continue;
-
-                    var contentResponse = await _httpClient.GetAsync(file.DownloadUrl);
-                    if (!contentResponse.IsSuccessStatusCode) continue;
-                    var content = await contentResponse.Content.ReadAsStringAsync();
-                    var deserializer = new DeserializerBuilder().Build();
-                    GameConfig config;
-                    try
+                    if (localDict.TryGetValue(remoteGame.Id, out var localGame))
                     {
-                        config = deserializer.Deserialize<GameConfig>(content);
-                    }
-                    catch
-                    {
-                        LauncherLogger.Warning($"Не удалось десериализовать {file.Name}, пропускаем");
-                        continue;
-                    }
-
-                    string id = Path.GetFileNameWithoutExtension(file.Name);
-                    string name = config.TargetProcesses?.Count > 0 ? config.TargetProcesses[0].Name : id;
-                    bool warpSupported = config.WarpSupported ?? false;
-
-                    if (localDict.TryGetValue(id, out var existing))
-                    {
-                        if (existing.Name != name || existing.WarpSupported != warpSupported || existing.Version != (config.Version ?? 1))
-                        {
-                            existing.Name = name;
-                            existing.WarpSupported = warpSupported;
-                            existing.Version = config.Version ?? 1;
-                            changed = true;
-                        }
+                        bool wasInstalled = localGame.Installed;
+                        localGame.Name = remoteGame.Name;
+                        localGame.ConfigUrl = remoteGame.ConfigUrl;
+                        localGame.WarpSupported = remoteGame.WarpSupported;
+                        localGame.Version = remoteGame.Version;
+                        localGame.Installed = wasInstalled;
+                        changed = true;
                     }
                     else
                     {
-                        var newPreset = new GamePreset
-                        {
-                            Id = id,
-                            Name = name,
-                            ConfigUrl = file.DownloadUrl,
-                            WarpSupported = warpSupported,
-                            Version = config.Version ?? 1,
-                            Installed = false
-                        };
-                        localPresets.Games.Add(newPreset);
+                        remoteGame.Installed = false;
+                        localPresets.Games.Add(remoteGame);
                         changed = true;
                     }
                 }
 
-                if (files.Count > 0)
+                var remoteIds = new HashSet<string>();
+                foreach (var g in remotePresets.Games)
+                    remoteIds.Add(g.Id);
+
+                var toRemove = new List<GamePreset>();
+                foreach (var g in localPresets.Games)
                 {
-                    var remoteIds = new HashSet<string>();
-                    foreach (var file in files)
-                    {
-                        if (file.Type == "file" && file.Name.EndsWith(".yaml") && file.Name != "presets.yaml")
-                            remoteIds.Add(Path.GetFileNameWithoutExtension(file.Name));
-                    }
-                    var toRemove = new List<GamePreset>();
-                    foreach (var g in localPresets.Games)
-                    {
-                        if (!remoteIds.Contains(g.Id))
-                            toRemove.Add(g);
-                    }
-                    foreach (var g in toRemove)
-                    {
-                        localPresets.Games.Remove(g);
-                        changed = true;
-                    }
+                    if (!remoteIds.Contains(g.Id))
+                        toRemove.Add(g);
+                }
+                foreach (var g in toRemove)
+                {
+                    localPresets.Games.Remove(g);
+                    changed = true;
                 }
 
                 if (changed)
@@ -283,13 +247,6 @@ namespace PlatformLauncher.Services
                 LauncherLogger.Error($"Ошибка загрузки конфига {gameId}: {ex.Message}");
                 return null;
             }
-        }
-
-        private class GitHubFileInfo
-        {
-            public string Name { get; set; }
-            public string DownloadUrl { get; set; }
-            public string Type { get; set; }
         }
     }
 }

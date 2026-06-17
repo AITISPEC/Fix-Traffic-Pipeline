@@ -18,7 +18,6 @@ namespace PlatformLauncher
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         }
 
-        // Переносим логику проверки в правильное событие жизненного цикла WPF
         protected override void OnStartup(StartupEventArgs e)
         {
             AppDomain.CurrentDomain.AssemblyResolve += (sender, args) => {
@@ -28,38 +27,14 @@ namespace PlatformLauncher
             };
             base.OnStartup(e);
 
-            // Проверяем, есть ли среди аргументов флаг отказа от прав
-            bool userDeclinedAdmin = e.Args.Contains("--no-admin-prompt");
-
-            // Запрашиваем права ТОЛЬКО если их нет И пользователь еще не отказывался
-            if (!IsAdministrator() && !userDeclinedAdmin)
+            // Обязательный запуск от администратора
+            if (!IsAdministrator())
             {
-                var result = MessageBox.Show(
-                    "Для запуска фиксов и варпа требуются права администратора.\n" +
-                    "Без прав доступен только мониторинг соединений.\n" +
-                    "Выдать права?",
-                    "Требуются права",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    RestartAsAdministrator(true);
-                }
-                else
-                {
-                    RestartAsAdministrator(false);
-                }
-
-                return; // Прерываем выполнение текущей копии, так как мы вызвали Restart
+                RestartAsAdministrator();
+                return;
             }
 
-            // Если код дошел досюда, значит:
-            // Либо приложение С ПРАВАМИ администратора,
-            // Либо пользователь нажал «Нет» и приложение перезапустилось в ограниченном режиме.
-
-            // ЗДЕСЬ МОЖНО ИНИЦИАЛИЗИРОВАТЬ ГЛАВНОЕ ОКНО
-            // (Если у вас в App.xaml прописан StartupUri="MainWindow.xaml", оно откроется само)
+            // Если админ – запускаем главное окно (StartupUri в App.xaml)
         }
 
         private bool IsAdministrator()
@@ -69,30 +44,24 @@ namespace PlatformLauncher
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
 
-        private void RestartAsAdministrator(bool adm)
+        private void RestartAsAdministrator()
         {
             var startInfo = new ProcessStartInfo
             {
                 UseShellExecute = true,
-                Verb = adm ? "runas" : "", // "runas" запустит UAC, пустая строка — обычный запуск
+                Verb = "runas",
                 FileName = Process.GetCurrentProcess().MainModule?.FileName ?? throw new InvalidOperationException("Не удалось получить путь к исполняемому файлу.")
             };
-
-            // Если перезапускаем БЕЗ прав, добавляем аргумент-заглушку
-            if (!adm)
-            {
-                startInfo.Arguments = "--no-admin-prompt";
-            }
 
             try
             {
                 Process.Start(startInfo);
-                Shutdown(); // Закрываем текущую копию только если новая успешно стартовала
+                Shutdown();
             }
             catch (Exception ex)
             {
-                // Сюда мы попадем, например, если при adm = true пользователь нажал «Нет» в самом окне UAC от Windows
-                MessageBox.Show($"Не удалось перезапустить приложение: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Не удалось перезапустить приложение с правами администратора: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
             }
         }
 

@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Security.Principal;
 using System.Threading.Tasks;
-using System.Windows;
 
 namespace PlatformLauncher.Services
 {
@@ -29,65 +28,104 @@ namespace PlatformLauncher.Services
             return true;
         }
 
-        private static IEnumerable<int> ExpandPortRange(object portSpec)
+        private static IEnumerable<object> ExpandPortRange(object portSpec)
         {
             string str = portSpec.ToString();
             if (str.Contains('-'))
             {
-                var parts = str.Split('-');
-                int start = int.Parse(parts[0]);
-                int end = int.Parse(parts[1]);
-                return Enumerable.Range(start, end - start + 1);
+                return new[] { portSpec };
             }
             return new[] { int.Parse(str) };
         }
 
-        public static async Task<bool> AddRulesAsync(IEnumerable<object> tcpPorts, IEnumerable<object> udpPorts, string gameId)
+        public static async Task<bool> AddRulesAsync(IEnumerable<object> tcpPorts, IEnumerable<object> udpPorts, string gameId, Action<string> progressCallback = null)
         {
             if (!EnsureAdmin()) return false;
             string prefix = $"{RulePrefix}_{gameId}";
 
+            int tcpCount = tcpPorts?.Count() ?? 0;
+            int udpCount = udpPorts?.Count() ?? 0;
+            int total = tcpCount + udpCount;
+            int done = 0;
+
+            progressCallback?.Invoke($"📌 Добавление правил портов: TCP={tcpCount}, UDP={udpCount}, всего={total * 2} (вх/исх)");
+
             foreach (var portSpec in tcpPorts)
-                foreach (int port in ExpandPortRange(portSpec))
+            {
+                foreach (object p in ExpandPortRange(portSpec))
                 {
-                    await AddRuleAsync(port, "TCP", "in", prefix);
-                    await AddRuleAsync(port, "TCP", "out", prefix);
+                    await AddRuleAsync(p, "TCP", "in", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} in");
+                    await AddRuleAsync(p, "TCP", "out", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} out");
                 }
+            }
 
             foreach (var portSpec in udpPorts)
-                foreach (int port in ExpandPortRange(portSpec))
+            {
+                foreach (object p in ExpandPortRange(portSpec))
                 {
-                    await AddRuleAsync(port, "UDP", "in", prefix);
-                    await AddRuleAsync(port, "UDP", "out", prefix);
+                    await AddRuleAsync(p, "UDP", "in", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} in");
+                    await AddRuleAsync(p, "UDP", "out", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} out");
                 }
+            }
+
+            progressCallback?.Invoke($"✅ Все правила портов добавлены ({total * 2} правил)");
             return true;
         }
 
-        public static async Task<bool> RemoveRulesAsync(IEnumerable<object> tcpPorts, IEnumerable<object> udpPorts, string gameId)
+        public static async Task<bool> RemoveRulesAsync(IEnumerable<object> tcpPorts, IEnumerable<object> udpPorts, string gameId, Action<string> progressCallback = null)
         {
             if (!EnsureAdmin()) return false;
             string prefix = $"{RulePrefix}_{gameId}";
 
+            int tcpCount = tcpPorts?.Count() ?? 0;
+            int udpCount = udpPorts?.Count() ?? 0;
+            int total = tcpCount + udpCount;
+            int done = 0;
+
+            progressCallback?.Invoke($"📌 Удаление правил портов: TCP={tcpCount}, UDP={udpCount}, всего={total * 2}");
+
             foreach (var portSpec in tcpPorts)
-                foreach (int port in ExpandPortRange(portSpec))
+            {
+                foreach (object p in ExpandPortRange(portSpec))
                 {
-                    await RemoveRuleAsync(port, "TCP", "in", prefix);
-                    await RemoveRuleAsync(port, "TCP", "out", prefix);
+                    await RemoveRuleAsync(p, "TCP", "in", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} in");
+                    await RemoveRuleAsync(p, "TCP", "out", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} out");
                 }
+            }
 
             foreach (var portSpec in udpPorts)
-                foreach (int port in ExpandPortRange(portSpec))
+            {
+                foreach (object p in ExpandPortRange(portSpec))
                 {
-                    await RemoveRuleAsync(port, "UDP", "in", prefix);
-                    await RemoveRuleAsync(port, "UDP", "out", prefix);
+                    await RemoveRuleAsync(p, "UDP", "in", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} in");
+                    await RemoveRuleAsync(p, "UDP", "out", prefix);
+                    done++;
+                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} out");
                 }
+            }
+
+            progressCallback?.Invoke($"✅ Все правила портов удалены ({total * 2} правил)");
             return true;
         }
 
-        private static async Task AddRuleAsync(int port, string protocol, string direction, string prefix)
+        private static async Task AddRuleAsync(object portSpec, string protocol, string direction, string prefix)
         {
-            string ruleName = $"{prefix}_{protocol}_{direction}_{port}";
-            var psi = new ProcessStartInfo("netsh", $"advfirewall firewall add rule name=\"{ruleName}\" dir={direction} action=allow protocol={protocol} localport={port}")
+            string ruleName = $"{prefix}_{protocol}_{direction}_{portSpec}";
+            var psi = new ProcessStartInfo("netsh", $"advfirewall firewall add rule name=\"{ruleName}\" dir={direction} action=allow protocol={protocol} localport={portSpec}")
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,
@@ -116,9 +154,9 @@ namespace PlatformLauncher.Services
             }
         }
 
-        private static async Task RemoveRuleAsync(int port, string protocol, string direction, string prefix)
+        private static async Task RemoveRuleAsync(object portSpec, string protocol, string direction, string prefix)
         {
-            string ruleName = $"{prefix}_{protocol}_{direction}_{port}";
+            string ruleName = $"{prefix}_{protocol}_{direction}_{portSpec}";
             var psi = new ProcessStartInfo("netsh", $"advfirewall firewall delete rule name=\"{ruleName}\"")
             {
                 CreateNoWindow = true,

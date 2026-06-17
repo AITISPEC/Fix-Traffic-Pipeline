@@ -8,8 +8,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using Microsoft.Win32;
+using System.Diagnostics;
+using System.Text;
+using System.Windows.Media; // <-- для VisualTreeHelper
 
 namespace PlatformLauncher
 {
@@ -20,15 +22,23 @@ namespace PlatformLauncher
         private GamePreset _selectedGame;
         private string _listsPath;
 
-        public bool IsAdministrator => PortsManager.IsAdministrator();
+        public bool IsAdministrator { get; }
 
         public MainWindow()
         {
             InitializeComponent();
+            IsAdministrator = IsCurrentUserAdministrator();
             Loaded += MainWindow_Loaded;
             _pythonManager.OutputReceived += AppendConsoleOutput;
             _pythonManager.ProcessExited += OnPythonProcessExited;
             UpdateStartButtonText();
+        }
+
+        private static bool IsCurrentUserAdministrator()
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(identity);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -45,11 +55,11 @@ namespace PlatformLauncher
                         "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
-                // Если presets.yaml отсутствует – создаём пустой
-                string presetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
+                string configDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
+                Directory.CreateDirectory(configDir);
+                string presetsPath = Path.Combine(configDir, "presets.yaml");
                 if (!File.Exists(presetsPath))
                 {
-                    // Создаём пустой файл
                     UpdateService.SavePresetsFile(new PresetsFile());
                     AppendConsoleOutput("Создан пустой presets.yaml");
                 }
@@ -72,7 +82,6 @@ namespace PlatformLauncher
                 }
 
                 OpenListsButton.IsEnabled = true;
-                await RecoverFromCrash();
                 await LoadPresets();
                 UpdateStartButtonText();
             }
@@ -83,87 +92,24 @@ namespace PlatformLauncher
             }
         }
 
-        private async Task RecoverFromCrash()
-        {
-            try
-            {
-                string backupRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "backups");
-                if (!Directory.Exists(backupRoot)) return;
-
-                var lastBackupDir = BackupManager.GetLatestBackupForAnyGame(backupRoot);
-                if (lastBackupDir == null) return;
-
-                if (string.IsNullOrEmpty(_listsPath))
-                {
-                    var result = MessageBox.Show(
-                        "Для восстановления бэкапа необходимо указать папку lists. Выбрать сейчас?",
-                        "Выбор папки lists",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-                    if (result == MessageBoxResult.Yes)
-                    {
-                        var dialog = new OpenFolderDialog();
-                        dialog.Title = "Выберите папку lists";
-                        if (dialog.ShowDialog() == true)
-                        {
-                            _listsPath = dialog.FolderName;
-                        }
-                        else
-                        {
-                            BackupManager.MarkBackupAsNotRestored(lastBackupDir);
-                            AppendConsoleOutput($"⛔ Бэкап {Path.GetFileName(lastBackupDir)} отмечен как не восстановленный (путь не выбран)");
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        BackupManager.MarkBackupAsNotRestored(lastBackupDir);
-                        AppendConsoleOutput($"⛔ Бэкап {Path.GetFileName(lastBackupDir)} отмечен как не восстановленный (путь не выбран)");
-                        return;
-                    }
-                }
-
-                var result2 = MessageBox.Show(
-                    "Обнаружен незавершённый сеанс. Восстановить папку lists из последнего бэкапа?",
-                    "Восстановление",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-                if (result2 == MessageBoxResult.Yes)
-                {
-                    BackupManager.RestoreBackup(_listsPath, lastBackupDir);
-                    AppendConsoleOutput($"✅ Восстановлен бэкап: {Path.GetFileName(lastBackupDir)}");
-                }
-                else
-                {
-                    BackupManager.MarkBackupAsNotRestored(lastBackupDir);
-                    AppendConsoleOutput($"⛔ Бэкап {Path.GetFileName(lastBackupDir)} отмечен как не восстановленный пользователем");
-                }
-            }
-            catch (Exception ex)
-            {
-                LauncherLogger.Error($"Ошибка восстановления после краша: {ex}");
-                AppendConsoleOutput($"❌ Ошибка при восстановлении: {ex.Message}");
-            }
-        }
-
         private async Task LoadPresets()
         {
             StatusBarText.Text = "Загрузка пресетов...";
             var presets = UpdateService.LoadPresets();
-            AppendConsoleOutput($"📊 Загружено пресетов: {presets.Count}");
             _allPresets.Clear();
             foreach (var p in presets)
                 _allPresets.Add(p);
             FilterGames();
             StatusBarText.Text = $"Загружено {_allPresets.Count} пресетов";
+            LauncherLogger.Info($"Загружено {_allPresets.Count} пресетов");
         }
 
         private void FilterGames()
         {
             bool onlyInstalled = ShowOnlyInstalledCheckBox.IsChecked == true;
             var filtered = _allPresets
-                .Where(p => !onlyInstalled || p.Installed)
-                .OrderBy(p => p.Installed ? 0 : 1)
+                .Where(p => !onlyInstalled || IsInstalled(p.Id))
+                .OrderBy(p => IsInstalled(p.Id) ? 0 : 1)
                 .ThenBy(p => p.Name)
                 .ToList();
             GamesListBox.ItemsSource = filtered;
@@ -176,36 +122,37 @@ namespace PlatformLauncher
             return p != null && p.Installed;
         }
 
-        private void GamesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            _selectedGame = GamesListBox.SelectedItem as GamePreset;
-            UpdateStartButtonText();
-            if (_selectedGame != null)
-                StatusBarText.Text = $"Выбран: {_selectedGame.Name}";
-        }
-
         private void UpdateStartButtonText()
         {
             if (_selectedGame == null)
             {
                 StartButton.Content = "Запустить фикс";
                 StartButton.IsEnabled = false;
+                MonitorButton.IsEnabled = false;
                 return;
             }
 
-            bool installed = _selectedGame.Installed;
+            bool installed = IsInstalled(_selectedGame.Id);
             if (!installed)
             {
                 StartButton.Content = "Установить";
                 StartButton.IsEnabled = true;
+                MonitorButton.IsEnabled = false;
                 return;
             }
 
-            if (IsAdministrator)
-                StartButton.Content = "Запустить фикс";
-            else
-                StartButton.Content = "Мониторинг";
-            StartButton.IsEnabled = true;
+            // Установлен
+            StartButton.Content = "Запустить фикс";
+            StartButton.IsEnabled = IsAdministrator;
+            MonitorButton.IsEnabled = true;
+        }
+
+        private void GamesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _selectedGame = GamesListBox.SelectedItem as GamePreset;
+            UpdateStartButtonText();
+            if (_selectedGame != null)
+                StatusBarText.Text = $"Выбран: {_selectedGame.Name}";
         }
 
         private async void RefreshPresetsButton_Click(object sender, RoutedEventArgs e)
@@ -216,7 +163,7 @@ namespace PlatformLauncher
             if (ok)
                 AppendConsoleOutput("✅ Синхронизация завершена");
             else
-                AppendConsoleOutput("❌ Ошибка синхронизации (проверьте лог для деталей)");
+                AppendConsoleOutput("❌ Ошибка синхронизации (подробности в логе)");
             await LoadPresets();
             StatusBarText.Text = "Готово";
         }
@@ -239,62 +186,179 @@ namespace PlatformLauncher
             await InstallGame(preset);
         }
 
+        private async Task<bool> RunPythonScript(string arguments)
+        {
+            string pythonExe = PythonEnvironmentManager.GetVenvPythonPath();
+            if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
+            {
+                AppendConsoleOutput("❌ Виртуальное окружение Python не найдено.");
+                return false;
+            }
+
+            string monitorScript = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "monitor.py");
+            if (!File.Exists(monitorScript))
+            {
+                AppendConsoleOutput($"❌ Скрипт монитора не найден: {monitorScript}");
+                return false;
+            }
+
+            var psi = new ProcessStartInfo(pythonExe, $"\"{monitorScript}\" {arguments}")
+            {
+                WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            using var process = new Process { StartInfo = psi };
+            process.OutputDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) AppendConsoleOutput(e.Data); };
+            process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) AppendConsoleOutput($"⚠️ {e.Data}"); };
+
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            await process.WaitForExitAsync();
+            return process.ExitCode == 0;
+        }
+
+        // Исправленный метод поиска ProgressBar
+        private void SetInstallProgress(string gameId, bool show)
+        {
+            foreach (var item in GamesListBox.Items)
+            {
+                var preset = item as GamePreset;
+                if (preset?.Id == gameId)
+                {
+                    var container = GamesListBox.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
+                    if (container != null)
+                    {
+                        var pb = FindVisualChild<ProgressBar>(container);
+                        if (pb != null)
+                        {
+                            pb.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T t)
+                    return t;
+                var result = FindVisualChild<T>(child);
+                if (result != null)
+                    return result;
+            }
+            return null;
+        }
+
         private async Task InstallGame(GamePreset preset)
         {
-            StatusBarText.Text = $"Установка {preset.Name}...";
-            var (success, error) = await UpdateService.InstallGameAsync(preset);
-            if (success)
+            try
             {
-                var config = UpdateService.LoadGameConfig(preset.Id);
-                if (config?.Ports != null)
+                StatusBarText.Text = $"Установка {preset.Name}...";
+                AppendConsoleOutput($"⏳ Установка {preset.Name}...");
+                LauncherLogger.Info($"Начало установки {preset.Id}");
+
+                SetInstallProgress(preset.Id, true);
+
+                var (success, error) = await UpdateService.InstallGameAsync(preset);
+                LauncherLogger.Info($"Результат установки: success={success}");
+
+                if (!success)
                 {
-                    try
-                    {
-                        await PortsManager.AddRulesAsync(config.Ports.Tcp, config.Ports.Udp, preset.Id);
-                    }
-                    catch (UnauthorizedAccessException ex)
-                    {
-                        MessageBox.Show(ex.Message, "Недостаточно прав", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
+                    MessageBox.Show($"Ошибка установки {preset.Name}:\n{error}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    StatusBarText.Text = "Ошибка";
+                    AppendConsoleOutput($"❌ Ошибка: {error}");
+                    SetInstallProgress(preset.Id, false);
+                    return;
                 }
-                // Перезагружаем список, чтобы обновить статус installed
-                await LoadPresets();
+
+                AppendConsoleOutput($"✅ Конфиг скачан");
+                LauncherLogger.Info($"Конфиг {preset.Id} скачан");
+
+                AppendConsoleOutput("📌 Установка правил портов...");
+                await RunPythonScript($"--install-rules {preset.Id}");
+
+                LauncherLogger.Info("Перезагрузка списка пресетов");
+                var freshPresets = UpdateService.LoadPresets();
+                _allPresets.Clear();
+                foreach (var p in freshPresets)
+                    _allPresets.Add(p);
+
+                FilterGames();
+
+                _selectedGame = _allPresets.FirstOrDefault(p => p.Id == preset.Id);
+                if (_selectedGame != null)
+                {
+                    GamesListBox.SelectedItem = _selectedGame;
+                    LauncherLogger.Info($"Выбран: {_selectedGame.Name}, Installed={_selectedGame.Installed}");
+                }
+
                 UpdateStartButtonText();
+                StatusBarText.Text = "Готово";
+                AppendConsoleOutput($"✅ Фикс {preset.Name} установлен");
+                LauncherLogger.Info($"Установка {preset.Id} завершена");
+
+                SetInstallProgress(preset.Id, false);
                 MessageBox.Show($"Фикс {preset.Name} установлен", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            else
+            catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка установки {preset.Name}:\n{error}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                LauncherLogger.Error($"Критическая ошибка установки: {ex}");
+                AppendConsoleOutput($"❌ Ошибка: {ex.Message}");
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText.Text = "Ошибка";
+                SetInstallProgress(preset.Id, false);
             }
-            StatusBarText.Text = "Готов";
         }
 
         private async void UninstallGame_Click(object sender, RoutedEventArgs e)
         {
             var preset = GamesListBox.SelectedItem as GamePreset;
             if (preset == null) return;
-            if (MessageBox.Show($"Удалить фикс {preset.Name}? Это также удалит правила портов.", "Подтверждение", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+
+            AppendConsoleOutput($"⏳ Удаление {preset.Name}...");
+            LauncherLogger.Info($"Начало удаления {preset.Id}");
+
+            if (MessageBox.Show($"Удалить фикс {preset.Name}? Это также удалит правила портов.",
+                "Подтверждение", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             if (_pythonManager.IsRunning && _selectedGame?.Id == preset.Id)
                 await StopPythonProcessAsync();
 
-            var config = UpdateService.LoadGameConfig(preset.Id);
-            if (config?.Ports != null)
-            {
-                try
-                {
-                    await PortsManager.RemoveRulesAsync(config.Ports.Tcp, config.Ports.Udp, preset.Id);
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    MessageBox.Show(ex.Message, "Недостаточно прав", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
+            AppendConsoleOutput("📌 Удаление правил портов...");
+            await RunPythonScript($"--remove-rules {preset.Id}");
 
             UpdateService.UninstallGame(preset.Id);
-            await LoadPresets();
+            LauncherLogger.Info($"Конфиг {preset.Id} удалён");
+
+            var freshPresets = UpdateService.LoadPresets();
+            _allPresets.Clear();
+            foreach (var p in freshPresets)
+                _allPresets.Add(p);
+
+            FilterGames();
+
+            _selectedGame = _allPresets.FirstOrDefault(p => p.Id == preset.Id);
+            if (_selectedGame != null)
+                GamesListBox.SelectedItem = _selectedGame;
+            else
+                _selectedGame = null;
+
             UpdateStartButtonText();
+            StatusBarText.Text = "Готово";
+            AppendConsoleOutput($"✅ Фикс {preset.Name} удалён");
+            LauncherLogger.Info($"Удаление {preset.Id} завершено");
             MessageBox.Show($"Фикс {preset.Name} удалён", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
@@ -309,33 +373,63 @@ namespace PlatformLauncher
             }
         }
 
+        private void GamesListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            var menu = (sender as ListBox)?.ContextMenu;
+            if (menu == null) return;
+
+            var preset = GamesListBox.SelectedItem as GamePreset;
+            if (preset == null)
+            {
+                menu.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            menu.Visibility = Visibility.Visible;
+            bool installed = IsInstalled(preset.Id);
+
+            foreach (MenuItem item in menu.Items)
+            {
+                if (item.Header?.ToString() == "Установить")
+                    item.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
+                else if (item.Header?.ToString() == "Удалить")
+                    item.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
         private async void StartButton_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedGame == null) return;
 
-            if (!_selectedGame.Installed)
+            if (!IsInstalled(_selectedGame.Id))
             {
                 await InstallGame(_selectedGame);
                 return;
             }
 
-            bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
-            bool monitorOnly = !IsAdministrator;
+            if (!IsAdministrator)
+            {
+                MessageBox.Show("Запуск фикса требует прав администратора.", "Недостаточно прав", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
+            bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
             if (string.IsNullOrEmpty(_listsPath))
             {
-                MessageBox.Show("Папка lists не найдена. Укажите путь через кнопку LISTS.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Папка lists не найдена. Укажите путь через кнопку LISTS.",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             ConsoleOutputTextBox.Clear();
-            AppendConsoleOutput($"Запуск {(monitorOnly ? "мониторинга" : "фикса")} {_selectedGame.Name}...");
+            AppendConsoleOutput($"Запуск фикса {_selectedGame.Name}...");
             try
             {
-                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, warpEnabled, "./backups", monitorOnly);
+                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, warpEnabled, "./backups", monitorOnly: false);
                 StartButton.IsEnabled = false;
+                MonitorButton.IsEnabled = false;
                 StopButton.IsEnabled = true;
-                StatusTextBlock.Text = monitorOnly ? "Мониторинг" : "Активен";
+                StatusTextBlock.Text = "Активен";
                 StatusBarText.Text = $"{_selectedGame.Name} запущен";
             }
             catch (Exception ex)
@@ -343,6 +437,41 @@ namespace PlatformLauncher
                 LauncherLogger.Error($"Ошибка запуска: {ex}");
                 AppendConsoleOutput($"Ошибка: {ex.Message}");
                 StartButton.IsEnabled = true;
+                MonitorButton.IsEnabled = true;
+                StopButton.IsEnabled = false;
+                StatusTextBlock.Text = "Ошибка";
+            }
+        }
+
+        private async void MonitorButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedGame == null || !IsInstalled(_selectedGame.Id)) return;
+
+            if (string.IsNullOrEmpty(_listsPath))
+            {
+                MessageBox.Show("Папка lists не найдена. Укажите путь через кнопку LISTS.",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            ConsoleOutputTextBox.Clear();
+            AppendConsoleOutput($"Запуск мониторинга {_selectedGame.Name}...");
+            try
+            {
+                bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
+                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, warpEnabled, "./backups", monitorOnly: true);
+                StartButton.IsEnabled = false;
+                MonitorButton.IsEnabled = false;
+                StopButton.IsEnabled = true;
+                StatusTextBlock.Text = "Мониторинг";
+                StatusBarText.Text = $"{_selectedGame.Name} мониторинг";
+            }
+            catch (Exception ex)
+            {
+                LauncherLogger.Error($"Ошибка мониторинга: {ex}");
+                AppendConsoleOutput($"Ошибка: {ex.Message}");
+                StartButton.IsEnabled = IsAdministrator;
+                MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
             }
@@ -358,7 +487,8 @@ namespace PlatformLauncher
             if (!_pythonManager.IsRunning) return;
             AppendConsoleOutput("Остановка процесса...");
             await _pythonManager.StopAsync();
-            StartButton.IsEnabled = true;
+            StartButton.IsEnabled = IsAdministrator;
+            MonitorButton.IsEnabled = true;
             StopButton.IsEnabled = false;
             StatusTextBlock.Text = "Остановлен";
             StatusBarText.Text = "Остановлен";
@@ -369,7 +499,8 @@ namespace PlatformLauncher
         {
             Dispatcher.Invoke(() =>
             {
-                StartButton.IsEnabled = true;
+                StartButton.IsEnabled = IsAdministrator;
+                MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Завершён";
                 StatusBarText.Text = $"Процесс завершён с кодом {exitCode}";
@@ -396,27 +527,5 @@ namespace PlatformLauncher
         }
 
         private void FilterGames_Changed(object sender, RoutedEventArgs e) => FilterGames();
-
-        private void GamesListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
-        {
-            var menu = (sender as ListBox)?.ContextMenu;
-            if (menu == null) return;
-            var preset = GamesListBox.SelectedItem as GamePreset;
-            if (preset == null)
-            {
-                menu.Visibility = Visibility.Collapsed;
-                return;
-            }
-            menu.Visibility = Visibility.Visible;
-            bool installed = preset.Installed;
-            foreach (MenuItem item in menu.Items)
-            {
-                if (item.Header?.ToString() == "Установить")
-                    item.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
-                else if (item.Header?.ToString() == "Удалить")
-                    item.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
-                // "Свойства" всегда видны
-            }
-        }
     }
 }
