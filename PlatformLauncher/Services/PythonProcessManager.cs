@@ -49,6 +49,14 @@ namespace PlatformLauncher.Services
 
             try
             {
+                foreach (var oldProcess in Process.GetProcessesByName("python"))
+                {
+                    // Проверяем, что это именно наш процесс, а не системный (опционально)
+                    if (oldProcess.MainModule?.FileName.Contains("venv") == true)
+                    {
+                        oldProcess.Kill(entireProcessTree: true);
+                    }
+                }
                 _process.Start();
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();

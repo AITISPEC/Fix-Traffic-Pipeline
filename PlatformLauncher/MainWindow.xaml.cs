@@ -1,4 +1,5 @@
-﻿using Microsoft.Win32;
+﻿using EasyWindowsTerminalControl;
+using Microsoft.Win32;
 using PlatformLauncher.Models;
 using PlatformLauncher.Services;
 using PlatformLauncher.Views;
@@ -25,18 +26,25 @@ namespace PlatformLauncher
         private BackupManager _backupManager;
         private string _currentBackupDir;
         private bool _backupRestored = false;
-        private bool _warpStartedByUs = false; // флаг, чтобы отключать WARP только если мы его включили
+        private bool _warpStartedByUs = false;
+        private StreamWriter _terminalLogWriter; // для логирования вывода в файл
 
         public bool IsAdministrator { get; }
 
-        public MainWindow()
+        public static MainWindow Instance { get; private set; }
+
+        public MainWindow() 
         {
             InitializeComponent();
+            Instance = this;
             IsAdministrator = IsCurrentUserAdministrator();
             Loaded += MainWindow_Loaded;
             _pythonManager.OutputReceived += AppendConsoleOutput;
             _pythonManager.ProcessExited += OnPythonProcessExited;
             UpdateStartButtonText();
+
+            // Настройка темы терминала (можно задать по умолчанию)
+            SetTerminalTheme("Light"); // или "Dark"
         }
 
         private static bool IsCurrentUserAdministrator()
@@ -93,6 +101,17 @@ namespace PlatformLauncher
                     await CheckAndRestoreBackups();
 
                 UpdateStartButtonText();
+
+                // Открываем лог-файл для записи вывода терминала
+                string logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+                Directory.CreateDirectory(logDir);
+                string logFile = Path.Combine(logDir, "console.log");
+                _terminalLogWriter = new StreamWriter(logFile, append: true, Encoding.UTF8);
+                _terminalLogWriter.AutoFlush = true;
+
+                AppendConsoleOutput("===== ТЕРМИНАЛ ЗАПУЩЕН =====");
+                AppendConsoleOutput("Тестовая строка с цветом \x1b[32mзелёный\x1b[0m и \x1b[31mкрасный\x1b[0m");
+
             }
             catch (Exception ex)
             {
@@ -126,7 +145,7 @@ namespace PlatformLauncher
                 else
                 {
                     backupMgr.MarkAsNoRestore(latest);
-                    AppendConsoleOutput($"ℹ️ Бэкап для {game.Name} помечен как невосстанавливаемый");
+                    AppendConsoleOutput($"ℹ️ Бэкап для {game.Name} помечен .norestored");
                 }
 
                 foreach (var other in unrestored.Where(d => d != latest))
@@ -495,25 +514,41 @@ namespace PlatformLauncher
 
             _backupRestored = false;
             _backupManager = new BackupManager("./backups", _selectedGame.Id);
-            _currentBackupDir = await _backupManager.CreateBackupAsync(_listsPath);
-            AppendConsoleOutput($"✅ Бэкап создан: {_currentBackupDir}");
+            try
+            {
+                _currentBackupDir = await _backupManager.CreateBackupAsync(_listsPath);
+                AppendConsoleOutput($"✅ Бэкап создан: {_currentBackupDir}");
+            }
+            catch (Exception ex)
+            {
+                AppendConsoleOutput($"❌ Ошибка создания бэкапа: {ex.Message}");
+                MessageBox.Show($"Не удалось создать бэкап: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
 
             _warpStartedByUs = false;
             if (warpEnabled)
             {
                 AppendConsoleOutput("⏳ Запуск WARP...");
-                bool warpStarted = await WarpManager.EnsureStartedAsync();
-                if (warpStarted)
+                try
                 {
-                    AppendConsoleOutput("✅ WARP запущен");
-                    _warpStartedByUs = true;
+                    bool warpStarted = await WarpManager.EnsureStartedAsync();
+                    if (warpStarted)
+                    {
+                        AppendConsoleOutput("✅ WARP запущен");
+                        _warpStartedByUs = true;
+                    }
+                    else
+                        AppendConsoleOutput("⚠️ Не удалось запустить WARP");
                 }
-                else
-                    AppendConsoleOutput("⚠️ Не удалось запустить WARP");
+                catch (Exception ex)
+                {
+                    AppendConsoleOutput($"❌ Ошибка запуска WARP: {ex.Message}");
+                }
             }
 
-            ConsoleOutputTextBox.Clear();
-            AppendConsoleOutput($"Запуск мониторинга {_selectedGame.Name}...");
+            ConsoleOutputTerminal.ConPTYTerm.ClearUITerminal(fullReset: false);
+            LauncherLogger.Info($"Запуск мониторинга {_selectedGame.Name}...");
 
             try
             {
@@ -524,10 +559,23 @@ namespace PlatformLauncher
                 StatusTextBlock.Text = "Активен";
                 StatusBarText.Text = $"{_selectedGame.Name} запущен";
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                LauncherLogger.Error($"Ошибка прав доступа: {ex}");
+                AppendConsoleOutput($"❌ Недостаточно прав: {ex.Message}");
+                MessageBox.Show($"Недостаточно прав для запуска. Запустите лаунчер от имени администратора.\n{ex.Message}",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                StartButton.IsEnabled = IsAdministrator;
+                MonitorButton.IsEnabled = true;
+                StopButton.IsEnabled = false;
+                StatusTextBlock.Text = "Ошибка";
+            }
             catch (Exception ex)
             {
                 LauncherLogger.Error($"Ошибка запуска: {ex}");
-                AppendConsoleOutput($"Ошибка: {ex.Message}");
+                AppendConsoleOutput($"❌ ОШИБКА: {ex.Message}");
+                AppendConsoleOutput($"   Подробности: {ex.StackTrace}");
+                MessageBox.Show($"Ошибка запуска: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 StartButton.IsEnabled = IsAdministrator;
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
@@ -546,7 +594,7 @@ namespace PlatformLauncher
                 return;
             }
 
-            ConsoleOutputTextBox.Clear();
+            ConsoleOutputTerminal.ConPTYTerm.ClearUITerminal(fullReset: false);
             AppendConsoleOutput($"Запуск мониторинга (только просмотр) {_selectedGame.Name}...");
 
             try
@@ -558,16 +606,28 @@ namespace PlatformLauncher
                 StatusTextBlock.Text = "Мониторинг";
                 StatusBarText.Text = $"{_selectedGame.Name} мониторинг";
             }
-            catch (Exception ex)
+            catch (UnauthorizedAccessException ex)
             {
-                LauncherLogger.Error($"Ошибка мониторинга: {ex}");
-                AppendConsoleOutput($"Ошибка: {ex.Message}");
+                LauncherLogger.Error($"Ошибка прав доступа: {ex}");
+                AppendConsoleOutput($"❌ Недостаточно прав: {ex.Message}");
+                MessageBox.Show($"Недостаточно прав для мониторинга.\n{ex.Message}",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 StartButton.IsEnabled = IsAdministrator;
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
             }
-            // В мониторинге бэкапов нет, поэтому finally не нужен
+            catch (Exception ex)
+            {
+                LauncherLogger.Error($"Ошибка мониторинга: {ex}");
+                AppendConsoleOutput($"❌ ОШИБКА: {ex.Message}");
+                AppendConsoleOutput($"   Подробности: {ex.StackTrace}");
+                MessageBox.Show($"Ошибка мониторинга: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                StartButton.IsEnabled = IsAdministrator;
+                MonitorButton.IsEnabled = true;
+                StopButton.IsEnabled = false;
+                StatusTextBlock.Text = "Ошибка";
+            }
         }
 
         private async void StopButton_Click(object sender, RoutedEventArgs e)
@@ -595,6 +655,9 @@ namespace PlatformLauncher
             StatusTextBlock.Text = "Остановлен";
             StatusBarText.Text = "Остановлен";
             UpdateStartButtonText();
+
+            // Принудительно сохраняем лог терминала
+            _terminalLogWriter?.Flush();
         }
 
         private int _restoreInProgress = 0;
@@ -608,7 +671,7 @@ namespace PlatformLauncher
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Завершён";
                 StatusBarText.Text = $"Процесс завершён с кодом {exitCode}";
-                AppendConsoleOutput($"Процесс завершён (код {exitCode})");
+                LauncherLogger.Info($"Процесс завершён (код {exitCode})");
 
                 // Восстановление только один раз
                 if (Interlocked.CompareExchange(ref _restoreInProgress, 1, 0) == 0)
@@ -617,19 +680,26 @@ namespace PlatformLauncher
                     {
                         if (!_backupRestored && _backupManager != null && !string.IsNullOrEmpty(_currentBackupDir))
                         {
-                            bool restored = await _backupManager.RestoreBackupAsync(_listsPath, _currentBackupDir);
-                            Dispatcher.Invoke(() =>
+                            try
                             {
-                                if (restored)
+                                bool restored = await _backupManager.RestoreBackupAsync(_listsPath, _currentBackupDir);
+                                Dispatcher.Invoke(() =>
                                 {
-                                    AppendConsoleOutput("✅ Бэкап восстановлен");
-                                    _backupRestored = true;
-                                }
-                                else
-                                    AppendConsoleOutput("⚠️ Ошибка восстановления бэкапа");
-                                _currentBackupDir = null;
-                                _backupManager = null;
-                            });
+                                    if (restored)
+                                    {
+                                        AppendConsoleOutput("✅ Бэкап восстановлен");
+                                        _backupRestored = true;
+                                    }
+                                    else
+                                        AppendConsoleOutput("⚠️ Ошибка восстановления бэкапа");
+                                    _currentBackupDir = null;
+                                    _backupManager = null;
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                AppendConsoleOutput($"❌ Ошибка при восстановлении бэкапа: {ex.Message}");
+                            }
                         }
                     }
                     finally
@@ -640,36 +710,137 @@ namespace PlatformLauncher
 
                 if (_warpStartedByUs)
                 {
-                    AppendConsoleOutput("⏳ Остановка WARP...");
-                    await WarpManager.DisconnectAsync();
-                    AppendConsoleOutput("✅ WARP остановлен");
-                    _warpStartedByUs = false;
+                    try
+                    {
+                        AppendConsoleOutput("⏳ Остановка WARP...");
+                        await WarpManager.DisconnectAsync();
+                        AppendConsoleOutput("✅ WARP остановлен");
+                        _warpStartedByUs = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendConsoleOutput($"❌ Ошибка остановки WARP: {ex.Message}");
+                    }
                 }
 
                 UpdateStartButtonText();
+                _terminalLogWriter?.Flush();
             });
         }
 
+        // Главный метод вывода: пишет в терминал и в лог-файл
         private void AppendConsoleOutput(string line)
         {
             Dispatcher.Invoke(() =>
             {
                 if (!string.IsNullOrEmpty(line))
-                    ConsoleOutputTextBox.AppendText(line + Environment.NewLine);
-                ConsoleOutputTextBox.ScrollToEnd();
-                if (ConsoleOutputTextBox.LineCount > 1000)
                 {
-                    var lines = ConsoleOutputTextBox.Text.Split(Environment.NewLine);
-                    var newText = string.Join(Environment.NewLine, lines.Skip(lines.Length - 800));
-                    ConsoleOutputTextBox.Text = newText;
-                    ConsoleOutputTextBox.ScrollToEnd();
+                    // Пишем напрямую в UI-терминал (поддерживает ANSI)
+                    ConsoleOutputTerminal.ConPTYTerm.WriteToUITerminal(line + Environment.NewLine);
+
+                    // Логируем в файл (опционально)
+                    _terminalLogWriter?.WriteLine(line);
+                    _terminalLogWriter?.Flush();
                 }
             });
         }
 
         private void FilterGames_Changed(object sender, RoutedEventArgs e) => FilterGames();
 
-        // ИСПРАВЛЕНИЕ: методы возвращают null
+        // Обработчик кнопки "Ввод" — открывает контекстное меню
+        private void InputButton_Click(object sender, RoutedEventArgs e)
+        {
+            InputContextMenu.PlacementTarget = InputButton;
+            InputContextMenu.IsOpen = true;
+        }
+
+        // Обработчик пунктов меню "Ввод"
+        private void InputMenu_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            if (menuItem?.Tag is string command)
+            {
+                // Выполняем команду через Python (если нужно) или просто выводим
+                // Здесь можно запускать команды в терминале, но так как интерактив не нужен,
+                // просто покажем результат выполнения в терминале.
+                // Для простоты выполним команду в отдельном процессе и выведем результат.
+                AppendConsoleOutput($"> {command}");
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        string pythonExe = PythonEnvironmentManager.GetVenvPythonPath();
+                        string cmd = command;
+                        if (cmd.StartsWith("python "))
+                            cmd = cmd.Replace("python ", pythonExe + " ");
+                        else if (cmd.StartsWith("pip "))
+                            cmd = cmd.Replace("pip ", pythonExe + " -m pip ");
+                        else
+                            cmd = pythonExe + " -m " + cmd; // fallback
+
+                        var psi = new ProcessStartInfo("cmd.exe", "/c " + cmd)
+                        {
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            StandardOutputEncoding = Encoding.UTF8,
+                            StandardErrorEncoding = Encoding.UTF8
+                        };
+                        using var proc = Process.Start(psi);
+                        string output = proc.StandardOutput.ReadToEnd();
+                        string error = proc.StandardError.ReadToEnd();
+                        proc.WaitForExit();
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (!string.IsNullOrEmpty(output))
+                                AppendConsoleOutput(output);
+                            if (!string.IsNullOrEmpty(error))
+                                AppendConsoleOutput($"⚠️ {error}");
+                            LauncherLogger.Info($"Команда завершена с кодом {proc.ExitCode}");
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.Invoke(() => AppendConsoleOutput($"❌ Ошибка: {ex.Message}"));
+                    }
+                });
+            }
+        }
+
+        // Настройка темы терминала
+        public void SetTerminalTheme(string themeName)
+        {
+            var theme = new Microsoft.Terminal.Wpf.TerminalTheme();
+            switch (themeName)
+            {
+                case "Dark":
+                    theme.DefaultBackground = EasyTerminalControl.ColorToVal(System.Windows.Media.Color.FromRgb(0, 0, 30));
+                    theme.DefaultForeground = EasyTerminalControl.ColorToVal(System.Windows.Media.Color.FromRgb(255, 255, 200));
+                    theme.DefaultSelectionBackground = 0xcccccc;
+                    theme.CursorStyle = Microsoft.Terminal.Wpf.CursorStyle.BlinkingBar;
+                    theme.ColorTable = new uint[] {
+                        0x0C0C0C, 0x1F0FC5, 0x0EA113, 0x009CC1, 0xDA3700, 0x981788, 0xDD963A, 0xCCCCCC,
+                        0x767676, 0x5648E7, 0x0CC616, 0xA5F1F9, 0xFF783B, 0x9E00B4, 0xD6D661, 0xF2F2F2
+                    };
+                    break;
+                case "Light":
+                    theme.DefaultBackground = EasyTerminalControl.ColorToVal(System.Windows.Media.Color.FromRgb(255, 255, 255));
+                    theme.DefaultForeground = EasyTerminalControl.ColorToVal(System.Windows.Media.Color.FromRgb(0, 0, 0));
+                    theme.DefaultSelectionBackground = 0xcccccc;
+                    theme.CursorStyle = Microsoft.Terminal.Wpf.CursorStyle.BlinkingBar;
+                    theme.ColorTable = new uint[] {
+                        0x0C0C0C, 0x1F0FC5, 0x0EA113, 0x009CC1, 0xDA3700, 0x981788, 0xDD963A, 0xCCCCCC,
+                        0x767676, 0x5648E7, 0x0CC616, 0xA5F1F9, 0xFF783B, 0x9E00B4, 0xD6D661, 0xF2F2F2
+                    };
+                    break;
+                default:
+                    return;
+            }
+            ConsoleOutputTerminal.Theme = theme;
+        }
+
+        // Вспомогательные методы для поиска элементов
         private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
@@ -681,7 +852,7 @@ namespace PlatformLauncher
                 if (result != null)
                     return result;
             }
-            return null; // добавлено
+            return null;
         }
 
         private T FindParent<T>(DependencyObject child) where T : DependencyObject
@@ -689,7 +860,14 @@ namespace PlatformLauncher
             var parent = VisualTreeHelper.GetParent(child);
             while (parent != null && !(parent is T))
                 parent = VisualTreeHelper.GetParent(parent);
-            return parent as T; // может быть null
+            return parent as T;
+        }
+
+        // Закрытие приложения – сохраняем лог
+        protected override void OnClosed(EventArgs e)
+        {
+            _terminalLogWriter?.Dispose();
+            base.OnClosed(e);
         }
     }
 }

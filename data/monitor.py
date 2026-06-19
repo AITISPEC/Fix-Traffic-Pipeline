@@ -5,6 +5,8 @@ import argparse
 import os
 import signal
 import atexit
+import colorama
+from colorama import Fore, Style
 
 # Принудительно UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")

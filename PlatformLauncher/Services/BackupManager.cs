@@ -48,7 +48,7 @@ namespace PlatformLauncher.Services
             // Если пользователь отметил "не восстанавливать" – пропускаем
             if (File.Exists(Path.Combine(backupDir, ".norestored")))
             {
-                LauncherLogger.Info($"Бэкап {backupDir} помечен как невосстанавливаемый");
+                LauncherLogger.Info($"Бэкап {backupDir} помечен .norestored");
                 return true;
             }
 

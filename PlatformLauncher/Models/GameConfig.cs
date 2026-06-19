@@ -61,6 +61,10 @@ namespace PlatformLauncher.Models
 
         [YamlMember(Alias = "version")]
         public int? Version { get; set; } = 1;
+
+        // НОВОЕ СВОЙСТВО
+        [YamlMember(Alias = "list_rules")]
+        public Dictionary<string, ListRule> ListRules { get; set; }
     }
 
     public class TargetProcess
@@ -115,5 +119,15 @@ namespace PlatformLauncher.Models
 
         [YamlMember(Alias = "max_domain_width")]
         public int MaxDomainWidth { get; set; }
+    }
+
+    // НОВЫЙ КЛАСС для правил списков
+    public class ListRule
+    {
+        [YamlMember(Alias = "action")]
+        public string Action { get; set; }
+
+        [YamlMember(Alias = "target")]
+        public string Target { get; set; }
     }
 }

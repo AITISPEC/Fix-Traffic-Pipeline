@@ -143,7 +143,6 @@ namespace PlatformLauncher.Services
                     }
                 }
 
-                // локальные игры, которых нет в удалённых, остаются
                 SavePresetsFile(localPresets);
                 LauncherLogger.Info("Синхронизация завершена, presets.yaml обновлён");
                 return true;
@@ -159,12 +158,14 @@ namespace PlatformLauncher.Services
         {
             try
             {
+                LauncherLogger.Info($"Начало установки {preset.Id}");
                 string configDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
                 if (!Directory.Exists(configDir)) Directory.CreateDirectory(configDir);
                 string localConfigPath = Path.Combine(configDir, $"{preset.Id}.yaml");
 
                 if (string.IsNullOrEmpty(preset.ConfigUrl))
                 {
+                    LauncherLogger.Warning($"ConfigUrl для {preset.Id} пуст, отмечаем как установленный без загрузки");
                     var presetsFile = LoadPresetsFile();
                     var localPreset = presetsFile.Games.Find(g => g.Id == preset.Id);
                     if (localPreset != null)
@@ -185,6 +186,7 @@ namespace PlatformLauncher.Services
                         return (false, err);
                     }
                     var content = await response.Content.ReadAsStringAsync();
+                    LauncherLogger.Info($"Конфиг загружен, размер {content.Length} байт");
 
                     try
                     {
@@ -192,16 +194,20 @@ namespace PlatformLauncher.Services
                         var config = deserializer.Deserialize<GameConfig>(content);
                         if (config.TargetProcesses == null || config.TargetProcesses.Count == 0)
                             throw new Exception("Конфиг не содержит target_processes");
+                        LauncherLogger.Info($"Валидация пройдена: target_processes = {config.TargetProcesses.Count}");
                     }
                     catch (Exception ex)
                     {
                         string err = $"Ошибка валидации конфига: {ex.Message}";
                         LauncherLogger.Error(err);
+                        // Выводим первые 500 символов для диагностики
+                        string snippet = content.Length > 500 ? content.Substring(0, 500) + "..." : content;
+                        LauncherLogger.Error($"Содержимое конфига (первые 500 символов): {snippet}");
                         return (false, err);
                     }
 
                     await File.WriteAllTextAsync(localConfigPath, content);
-                    LauncherLogger.Info($"Конфиг {preset.Name} сохранён в {localConfigPath}");
+                    LauncherLogger.Info($"Конфиг сохранён в {localConfigPath}");
                 }
 
                 var presetsFileAfter = LoadPresetsFile();
@@ -211,12 +217,14 @@ namespace PlatformLauncher.Services
                     localPresetAfter.Installed = true;
                     SavePresetsFile(presetsFileAfter);
                 }
+                LauncherLogger.Info($"Установка {preset.Id} завершена успешно");
                 return (true, null);
             }
             catch (Exception ex)
             {
                 string err = $"Ошибка установки {preset.Name}: {ex.Message}";
                 LauncherLogger.Error(err);
+                LauncherLogger.Error($"Stack trace: {ex.StackTrace}");
                 return (false, err);
             }
         }
@@ -229,6 +237,7 @@ namespace PlatformLauncher.Services
             {
                 preset.Installed = false;
                 SavePresetsFile(presetsFile);
+                LauncherLogger.Info($"Игра {gameId} отмечена как неустановленная");
             }
         }
 

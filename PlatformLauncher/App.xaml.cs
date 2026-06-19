@@ -7,23 +7,35 @@ using System.Reflection;
 using System.Security.Principal;
 using System.Windows;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
 
 namespace PlatformLauncher
 {
     public partial class App : Application
     {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetDllDirectory(string lpPathName);
         public App()
         {
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+
+            string libsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs");
+            if (Directory.Exists(libsPath))
+            {
+                SetDllDirectory(libsPath);
+            }
         }
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) => {
+            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+            {
                 string assemblyName = new AssemblyName(args.Name).Name + ".dll";
-                string assemblyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName);
-                return File.Exists(assemblyPath) ? Assembly.LoadFrom(assemblyPath) : null;
+                string libsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName);
+                if (File.Exists(libsPath))
+                    return Assembly.LoadFrom(libsPath);
+                return null;
             };
             base.OnStartup(e);
 

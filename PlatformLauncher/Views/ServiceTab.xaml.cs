@@ -83,5 +83,18 @@ namespace PlatformLauncher.Views
                 StopWarpButton.IsEnabled = true;
             }
         }
+
+        // Обработчик для кнопки "Темы"
+        private void ThemesButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Открываем диалог выбора темы (создадим отдельное окно)
+            var dialog = new ThemeDialog();
+            if (dialog.ShowDialog() == true)
+            {
+                // Применяем тему к главному окну
+                var mainWindow = Application.Current.MainWindow as MainWindow;
+                mainWindow?.SetTerminalTheme(dialog.SelectedTheme);
+            }
+        }
     }
 }

@@ -17,13 +17,11 @@ namespace PlatformLauncher.Services
 
         // ----- Публичные методы с перегрузками -----
 
-        // Перегрузка без callback – вызывает основную с пустым делегатом
         public async Task<(bool Success, string Error)> AddRulesAsync(List<object> tcpPorts, List<object> udpPorts)
         {
             return await AddRulesAsync(tcpPorts, udpPorts, null);
         }
 
-        // Основной метод с callback
         public async Task<(bool Success, string Error)> AddRulesAsync(List<object> tcpPorts, List<object> udpPorts, Action<string> progressCallback)
         {
             try
@@ -38,6 +36,7 @@ namespace PlatformLauncher.Services
                     {
                         string portStr = port.ToString();
                         LauncherLogger.Info($"Добавление TCP {portStr}");
+                        progressCallback?.Invoke($"   TCP {portStr}...");
                         await AddSingleRuleAsync(portStr, "TCP");
                         done++;
                         progressCallback?.Invoke($"   Прогресс: {done}/{total}");
@@ -50,6 +49,7 @@ namespace PlatformLauncher.Services
                     {
                         string portStr = port.ToString();
                         LauncherLogger.Info($"Добавление UDP {portStr}");
+                        progressCallback?.Invoke($"   UDP {portStr}...");
                         await AddSingleRuleAsync(portStr, "UDP");
                         done++;
                         progressCallback?.Invoke($"   Прогресс: {done}/{total}");
@@ -68,13 +68,11 @@ namespace PlatformLauncher.Services
             }
         }
 
-        // Перегрузка Remove без callback
         public async Task<(bool Success, string Error)> RemoveAllRulesAsync()
         {
             return await RemoveAllRulesAsync(null);
         }
 
-        // Основной метод Remove с callback
         public async Task<(bool Success, string Error)> RemoveAllRulesAsync(Action<string> progressCallback)
         {
             try
@@ -95,7 +93,7 @@ namespace PlatformLauncher.Services
             }
         }
 
-        // ----- Вспомогательные методы с логированием -----
+        // ----- Вспомогательные методы -----
 
         private async Task AddSingleRuleAsync(string portSpec, string protocol)
         {

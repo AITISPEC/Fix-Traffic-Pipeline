@@ -88,7 +88,9 @@ class NetworkMonitor:
 			# action == "ignore" – ничего не делаем
 
 		# Подсветка: если is_target или proc_name в highlight_proc_names
-		should_highlight = is_target or proc_name.lower() in [p.lower() for p in self.highlight_proc_names]
+		should_highlight = is_target or proc_name.lower() in [
+			p.lower() for p in self.highlight_proc_names
+		]
 
 		formatted = format_connection(
 			proc_name,
@@ -97,7 +99,7 @@ class NetworkMonitor:
 			domain,
 			status,
 			count,
-			should_highlight,    # вместо списка highlight_proc_names
+			should_highlight,  # вместо списка highlight_proc_names
 			self.highlight_attr,
 			self.highlight_color,
 			self.color_enabled,
@@ -113,17 +115,11 @@ class NetworkMonitor:
 
 		print(
 			Fore.CYAN
-			+ f"\n    === {self.game_name} {'МОНИТОРИНГ' if self.monitor_only else 'FIX'} запущен ===\n"
+			+ f"\n=== {self.game_name} {'MONITOR' if self.monitor_only else 'FIX'} запущен ===\n"
 			+ Style.RESET_ALL
 		)
-		if not self.monitor_only:
-			print(f"    Папка с листами: {self.list_manager.lists_path}")
-		print(
-			Fore.YELLOW
-			+ "\n    Запуск перед каждой игрой - необязательно."
-			+ Style.RESET_ALL
-		)
-		print("-" * 63)
+
+		print("-" * 64)
 
 		last_clean = time.time()
 		try:
