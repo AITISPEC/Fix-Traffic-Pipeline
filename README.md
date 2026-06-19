@@ -1,7 +1,3 @@
-Понял, больше не буду оборачивать в тройные кавычки. Вот финальный `README.md` (чистый Markdown, без внешних блоков):
-
----
-
 # Fix-Traffic-Pipeline
 
 **Games Fix Connections**
