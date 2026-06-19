@@ -2,105 +2,206 @@
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Threading.Tasks;
+using System.Net.Http.Headers;
 
 namespace PlatformLauncher.Services
 {
     public static class WarpManager
     {
-        private const string WarpMsiUrl = "https://github.com/AITISPEC/Helpful/releases/download/apex-fix/Cloudflare.msi";
+        // ИЗМЕНЕНИЕ: новый URL для загрузки
+        private const string WARP_URL = "https://1111-releases.cloudflareclient.com/win/latest";
 
-        public static bool IsInstalled()
+        // ИЗМЕНЕНИЕ: папка для сохранения установщика
+        private static readonly string ExtraFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
+
+        static WarpManager()
+        {
+            Directory.CreateDirectory(ExtraFolder);
+        }
+
+        public static async Task<bool> IsInstalledAsync()
         {
             try
             {
-                var p = Process.Start(new ProcessStartInfo("warp-cli", "--version") { CreateNoWindow = true, RedirectStandardOutput = true });
-                p?.WaitForExit(2000);
-                return p != null && p.ExitCode == 0;
-            }
-            catch { return false; }
-        }
-
-        public static void EnsureStarted()
-        {
-            if (!IsInstalled())
-            {
-                Install();
-            }
-            StartGui();
-            SetMasqueProtocol();
-            Connect();
-        }
-
-        private static bool IsAdministrator()
-        {
-            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-            var principal = new System.Security.Principal.WindowsPrincipal(identity);
-            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-        }
-
-        private static void Install()
-        {
-            if (!IsAdministrator())
-            {
-                var psi = new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location)
+                var psi = new ProcessStartInfo("warp-cli", "--version")
                 {
-                    Verb = "runas",
-                    UseShellExecute = true
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
                 };
-                Process.Start(psi);
-                Environment.Exit(0);
-                return;
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+                return p.ExitCode == 0;
             }
-
-            string tempMsi = Path.GetTempFileName() + ".msi";
-            using (var client = new HttpClient())
+            catch
             {
-                var response = client.GetAsync(WarpMsiUrl).Result;
-                response.EnsureSuccessStatusCode();
-                using (var fs = new FileStream(tempMsi, FileMode.Create))
+                return false;
+            }
+        }
+
+        // ИЗМЕНЕНИЕ: метод загрузки с сохранением оригинального имени файла
+        private static async Task<string> DownloadInstallerAsync()
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+            var response = await client.GetAsync(WARP_URL, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            // Получаем имя файла из Content-Disposition или из последнего сегмента URL
+            string fileName = null;
+            if (response.Content.Headers.ContentDisposition != null)
+            {
+                fileName = response.Content.Headers.ContentDisposition.FileNameStar ??
+                           response.Content.Headers.ContentDisposition.FileName;
+            }
+            if (string.IsNullOrEmpty(fileName))
+            {
+                // Пытаемся извлечь из URL (после редиректа)
+                var uri = response.RequestMessage?.RequestUri;
+                if (uri != null && !string.IsNullOrEmpty(uri.Segments[^1]))
+                    fileName = uri.Segments[^1];
+                else
+                    fileName = "CloudflareWARP.msi"; // запасное имя
+            }
+            // Очищаем от кавычек
+            fileName = fileName.Trim('"');
+
+            string localPath = Path.Combine(ExtraFolder, fileName);
+
+            // Скачиваем
+            using var fs = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            await response.Content.CopyToAsync(fs);
+            return localPath;
+        }
+
+        public static async Task<bool> InstallAsync()
+        {
+            if (await IsInstalledAsync())
+                return true;
+
+            string installerPath = await DownloadInstallerAsync();
+            if (string.IsNullOrEmpty(installerPath) || !File.Exists(installerPath))
+                return false;
+
+            try
+            {
+                var psi = new ProcessStartInfo("msiexec", $"/i \"{installerPath}\" /quiet /norestart")
                 {
-                    response.Content.CopyToAsync(fs).Wait();
-                }
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+                await Task.Delay(5000);
+                // Не удаляем установщик, чтобы можно было переустановить
+                return p.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static async Task<bool> SetMasqueProtocolAsync()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("warp-cli", "tunnel protocol set MASQUE")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                };
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+                return p.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static async Task<bool> ConnectAsync()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("warp-cli", "connect")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                };
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+                return p.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static async Task<bool> DisconnectAsync()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("warp-cli", "disconnect")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                };
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+                return p.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static async Task<bool> EnsureStartedAsync()
+        {
+            if (!await IsInstalledAsync())
+                if (!await InstallAsync())
+                    return false;
+
+            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string warpExe = Path.Combine(programFiles, "Cloudflare", "Cloudflare WARP", "Cloudflare WARP.exe");
+            if (File.Exists(warpExe))
+            {
+                bool isRunning = Process.GetProcessesByName("Cloudflare WARP").Length > 0;
+                if (!isRunning)
+                    Process.Start(warpExe);
             }
 
-            var installPsi = new ProcessStartInfo("msiexec", $"/i \"{tempMsi}\" /quiet /norestart")
+            await SetMasqueProtocolAsync();
+            return await ConnectAsync();
+        }
+
+        public static async Task<string> GetStatusAsync()
+        {
+            try
             {
-                Verb = "runas",
-                UseShellExecute = true
-            };
-            var p = Process.Start(installPsi);
-            p?.WaitForExit();
-            if (p?.ExitCode != 0)
-            {
-                throw new Exception($"Установка WARP завершилась с ошибкой (код {p?.ExitCode}).");
+                var psi = new ProcessStartInfo("warp-cli", "status")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8
+                };
+                using var p = Process.Start(psi);
+                string output = await p.StandardOutput.ReadToEndAsync();
+                await p.WaitForExitAsync();
+                return output.Contains("Connected") ? "connected" : "disconnected";
             }
-            File.Delete(tempMsi);
-        }
-
-        private static void StartGui()
-        {
-            string progFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            string exePath = Path.Combine(progFiles, "Cloudflare", "Cloudflare WARP", "Cloudflare WARP.exe");
-            if (File.Exists(exePath))
-                Process.Start(exePath);
-        }
-
-        private static void SetMasqueProtocol()
-        {
-            var psi = new ProcessStartInfo("warp-cli", "tunnel protocol set MASQUE") { CreateNoWindow = true };
-            Process.Start(psi)?.WaitForExit(2000);
-        }
-
-        private static void Connect()
-        {
-            var psi = new ProcessStartInfo("warp-cli", "connect") { CreateNoWindow = true };
-            Process.Start(psi)?.WaitForExit(2000);
-        }
-
-        public static void Disconnect()
-        {
-            var psi = new ProcessStartInfo("warp-cli", "disconnect") { CreateNoWindow = true };
-            Process.Start(psi)?.WaitForExit(2000);
+            catch
+            {
+                return "disconnected";
+            }
         }
     }
 }

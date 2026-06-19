@@ -1,184 +1,165 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Security.Principal;
 using System.Threading.Tasks;
+using System.Text;
 
 namespace PlatformLauncher.Services
 {
-    public static class PortsManager
+    public class PortsManager
     {
-        private static string RulePrefix = "GameFix";
+        private readonly string _gameId;
 
-        public static bool IsAdministrator()
+        public PortsManager(string gameId)
         {
-            using var identity = WindowsIdentity.GetCurrent();
-            var principal = new WindowsPrincipal(identity);
-            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            _gameId = gameId;
         }
 
-        private static bool EnsureAdmin()
+        // ----- Публичные методы с перегрузками -----
+
+        // Перегрузка без callback – вызывает основную с пустым делегатом
+        public async Task<(bool Success, string Error)> AddRulesAsync(List<object> tcpPorts, List<object> udpPorts)
         {
-            if (!IsAdministrator())
-            {
-                LauncherLogger.Warning("Попытка изменить правила брандмауэра без прав администратора.");
-                return false;
-            }
-            return true;
+            return await AddRulesAsync(tcpPorts, udpPorts, null);
         }
 
-        private static IEnumerable<object> ExpandPortRange(object portSpec)
+        // Основной метод с callback
+        public async Task<(bool Success, string Error)> AddRulesAsync(List<object> tcpPorts, List<object> udpPorts, Action<string> progressCallback)
         {
-            string str = portSpec.ToString();
-            if (str.Contains('-'))
-            {
-                return new[] { portSpec };
-            }
-            return new[] { int.Parse(str) };
-        }
-
-        public static async Task<bool> AddRulesAsync(IEnumerable<object> tcpPorts, IEnumerable<object> udpPorts, string gameId, Action<string> progressCallback = null)
-        {
-            if (!EnsureAdmin()) return false;
-            string prefix = $"{RulePrefix}_{gameId}";
-
-            int tcpCount = tcpPorts?.Count() ?? 0;
-            int udpCount = udpPorts?.Count() ?? 0;
-            int total = tcpCount + udpCount;
-            int done = 0;
-
-            progressCallback?.Invoke($"📌 Добавление правил портов: TCP={tcpCount}, UDP={udpCount}, всего={total * 2} (вх/исх)");
-
-            foreach (var portSpec in tcpPorts)
-            {
-                foreach (object p in ExpandPortRange(portSpec))
-                {
-                    await AddRuleAsync(p, "TCP", "in", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} in");
-                    await AddRuleAsync(p, "TCP", "out", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} out");
-                }
-            }
-
-            foreach (var portSpec in udpPorts)
-            {
-                foreach (object p in ExpandPortRange(portSpec))
-                {
-                    await AddRuleAsync(p, "UDP", "in", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} in");
-                    await AddRuleAsync(p, "UDP", "out", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} out");
-                }
-            }
-
-            progressCallback?.Invoke($"✅ Все правила портов добавлены ({total * 2} правил)");
-            return true;
-        }
-
-        public static async Task<bool> RemoveRulesAsync(IEnumerable<object> tcpPorts, IEnumerable<object> udpPorts, string gameId, Action<string> progressCallback = null)
-        {
-            if (!EnsureAdmin()) return false;
-            string prefix = $"{RulePrefix}_{gameId}";
-
-            int tcpCount = tcpPorts?.Count() ?? 0;
-            int udpCount = udpPorts?.Count() ?? 0;
-            int total = tcpCount + udpCount;
-            int done = 0;
-
-            progressCallback?.Invoke($"📌 Удаление правил портов: TCP={tcpCount}, UDP={udpCount}, всего={total * 2}");
-
-            foreach (var portSpec in tcpPorts)
-            {
-                foreach (object p in ExpandPortRange(portSpec))
-                {
-                    await RemoveRuleAsync(p, "TCP", "in", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} in");
-                    await RemoveRuleAsync(p, "TCP", "out", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] TCP {p} out");
-                }
-            }
-
-            foreach (var portSpec in udpPorts)
-            {
-                foreach (object p in ExpandPortRange(portSpec))
-                {
-                    await RemoveRuleAsync(p, "UDP", "in", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} in");
-                    await RemoveRuleAsync(p, "UDP", "out", prefix);
-                    done++;
-                    progressCallback?.Invoke($"  [{done * 2}/{total * 2}] UDP {p} out");
-                }
-            }
-
-            progressCallback?.Invoke($"✅ Все правила портов удалены ({total * 2} правил)");
-            return true;
-        }
-
-        private static async Task AddRuleAsync(object portSpec, string protocol, string direction, string prefix)
-        {
-            string ruleName = $"{prefix}_{protocol}_{direction}_{portSpec}";
-            var psi = new ProcessStartInfo("netsh", $"advfirewall firewall add rule name=\"{ruleName}\" dir={direction} action=allow protocol={protocol} localport={portSpec}")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true
-            };
-
             try
             {
-                using var process = new Process { StartInfo = psi };
-                process.Start();
-                await process.WaitForExitAsync();
-                if (process.ExitCode != 0)
-                    LauncherLogger.Warning($"Добавление правила {ruleName} вернуло код {process.ExitCode}");
-                else
-                    LauncherLogger.Info($"Добавлено правило: {ruleName}");
-            }
-            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
-            {
-                LauncherLogger.Error($"Недостаточно прав для добавления правила {ruleName}: {ex.Message}");
-                throw new UnauthorizedAccessException("Требуются права администратора для изменения брандмауэра.", ex);
+                int total = (tcpPorts?.Count ?? 0) + (udpPorts?.Count ?? 0);
+                int done = 0;
+                progressCallback?.Invoke($"📌 Установка правил портов (всего {total} записей)...");
+
+                if (tcpPorts != null)
+                {
+                    foreach (var port in tcpPorts)
+                    {
+                        string portStr = port.ToString();
+                        LauncherLogger.Info($"Добавление TCP {portStr}");
+                        await AddSingleRuleAsync(portStr, "TCP");
+                        done++;
+                        progressCallback?.Invoke($"   Прогресс: {done}/{total}");
+                    }
+                }
+
+                if (udpPorts != null)
+                {
+                    foreach (var port in udpPorts)
+                    {
+                        string portStr = port.ToString();
+                        LauncherLogger.Info($"Добавление UDP {portStr}");
+                        await AddSingleRuleAsync(portStr, "UDP");
+                        done++;
+                        progressCallback?.Invoke($"   Прогресс: {done}/{total}");
+                    }
+                }
+
+                LauncherLogger.Info("Все правила портов добавлены");
+                progressCallback?.Invoke("✅ Правила портов добавлены");
+                return (true, null);
             }
             catch (Exception ex)
             {
-                LauncherLogger.Error($"Ошибка добавления правила {ruleName}: {ex.Message}");
-                throw;
+                LauncherLogger.Error($"Ошибка добавления правил: {ex}");
+                progressCallback?.Invoke($"❌ Ошибка: {ex.Message}");
+                return (false, ex.Message);
             }
         }
 
-        private static async Task RemoveRuleAsync(object portSpec, string protocol, string direction, string prefix)
+        // Перегрузка Remove без callback
+        public async Task<(bool Success, string Error)> RemoveAllRulesAsync()
         {
-            string ruleName = $"{prefix}_{protocol}_{direction}_{portSpec}";
-            var psi = new ProcessStartInfo("netsh", $"advfirewall firewall delete rule name=\"{ruleName}\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true
-            };
+            return await RemoveAllRulesAsync(null);
+        }
 
+        // Основной метод Remove с callback
+        public async Task<(bool Success, string Error)> RemoveAllRulesAsync(Action<string> progressCallback)
+        {
             try
             {
-                using var process = new Process { StartInfo = psi };
-                process.Start();
-                await process.WaitForExitAsync();
-                LauncherLogger.Info($"Удалено правило: {ruleName}");
-            }
-            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
-            {
-                LauncherLogger.Warning($"Недостаточно прав для удаления правила {ruleName}. Возможно, оно уже удалено.");
+                progressCallback?.Invoke($"📌 Удаление всех правил для {_gameId} через PowerShell...");
+                string psCmd = $"Get-NetFirewallRule -DisplayName \"GameFix_{_gameId}_*\" | Remove-NetFirewallRule";
+                string args = $"-NoProfile -Command \"{psCmd}\"";
+                LauncherLogger.Info($"PowerShell: {args}");
+                await RunPowerShellAsync(args);
+                progressCallback?.Invoke("✅ Все правила удалены");
+                return (true, null);
             }
             catch (Exception ex)
             {
-                LauncherLogger.Error($"Ошибка удаления правила {ruleName}: {ex.Message}");
+                LauncherLogger.Error($"Ошибка удаления через PowerShell: {ex}");
+                progressCallback?.Invoke($"❌ Ошибка: {ex.Message}");
+                return (false, ex.Message);
             }
+        }
+
+        // ----- Вспомогательные методы с логированием -----
+
+        private async Task AddSingleRuleAsync(string portSpec, string protocol)
+        {
+            string name = $"GameFix_{_gameId}_{protocol}_{portSpec}";
+            foreach (string dir in new[] { "in", "out" })
+            {
+                string args = $"advfirewall firewall add rule name=\"{name}\" dir={dir} action=allow protocol={protocol} localport={portSpec}";
+                LauncherLogger.Info($"netsh {args}");
+                await RunNetshAsync(args);
+            }
+        }
+
+        private async Task RunNetshAsync(string arguments)
+        {
+            var psi = new ProcessStartInfo("netsh", arguments)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            using var process = Process.Start(psi);
+            if (process == null)
+                throw new Exception("Не удалось запустить netsh");
+
+            string output = await process.StandardOutput.ReadToEndAsync();
+            string error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                LauncherLogger.Error($"netsh exit {process.ExitCode}, error: {error}");
+                throw new Exception($"netsh failed: {error}");
+            }
+            LauncherLogger.Info($"netsh output: {output}");
+        }
+
+        private async Task RunPowerShellAsync(string arguments)
+        {
+            var psi = new ProcessStartInfo("powershell", arguments)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            using var process = Process.Start(psi);
+            if (process == null)
+                throw new Exception("Не удалось запустить PowerShell");
+
+            string output = await process.StandardOutput.ReadToEndAsync();
+            string error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                LauncherLogger.Error($"PowerShell exit {process.ExitCode}, error: {error}");
+                throw new Exception($"PowerShell failed: {error}");
+            }
+            LauncherLogger.Info($"PowerShell output: {output}");
         }
     }
 }

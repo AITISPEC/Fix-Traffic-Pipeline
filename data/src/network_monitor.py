@@ -23,7 +23,6 @@ class NetworkMonitor:
 		self.monitor_only = monitor_only
 
 		if monitor_only:
-			# В режиме мониторинга ListManager создаётся, но в readonly и без инициализации файлов
 			self.list_manager = ListManager(config, lists_path, readonly=True)
 		else:
 			self.list_manager = ListManager(config, lists_path)
@@ -45,11 +44,21 @@ class NetworkMonitor:
 
 		self.executor = BoundedThreadPool(max_workers=64, max_queue_size=256)
 
+		# ИЗМЕНЕНИЕ: чтение правил для списков из конфига
+		self.list_rules = config.get("list_rules", {})
+		# Для обратной совместимости, если правил нет, используем старую логику
+		if not self.list_rules:
+			self.list_rules = {
+				"SYN_SENT": {"action": "add_to_main", "target": "both"},
+				"ESTABLISHED": {"action": "ignore", "target": "none"},
+			}
+
 	def _process_connection(self, conn, count):
 		remote_ip = conn["raddr_ip"]
 		remote_port = conn["raddr_port"]
 		proc_name = conn["proc_name"]
 		status = conn["status"]
+		is_target = conn.get("is_target", False)
 
 		need_dns = status in self.config.get("dns_resolve_statuses", ["SYN_SENT"])
 		domain = self.dns.resolve(remote_ip) if need_dns else "—"
@@ -60,12 +69,26 @@ class NetworkMonitor:
 		):
 			return
 
-		# Запись в списки только если НЕ monitor_only
+		# ИЗМЕНЕНИЕ: применение правил из конфига
+		rule = self.list_rules.get(status, {})
+		action = rule.get("action", "ignore")
+		target = rule.get("target", "none")
+
 		if not self.monitor_only:
-			if status == "SYN_SENT":
-				self.list_manager.add_to_lists_files(remote_ip, domain, proc_name)
-			elif status == "ESTABLISHED":
-				self.list_manager.add_to_exclude_lists(remote_ip, domain, proc_name)
+			if action == "add_to_main":
+				if target in ("ip_only", "both"):
+					self.list_manager.add_to_lists_files(remote_ip, None, proc_name)
+				if target in ("domain_only", "both") and domain != "—":
+					self.list_manager.add_to_lists_files(None, domain, proc_name)
+			elif action == "add_to_exclude":
+				if target in ("ip_only", "both"):
+					self.list_manager.add_to_exclude_lists(remote_ip, None, proc_name)
+				if target in ("domain_only", "both") and domain != "—":
+					self.list_manager.add_to_exclude_lists(None, domain, proc_name)
+			# action == "ignore" – ничего не делаем
+
+		# Подсветка: если is_target или proc_name в highlight_proc_names
+		should_highlight = is_target or proc_name.lower() in [p.lower() for p in self.highlight_proc_names]
 
 		formatted = format_connection(
 			proc_name,
@@ -74,12 +97,13 @@ class NetworkMonitor:
 			domain,
 			status,
 			count,
-			self.highlight_proc_names,
+			should_highlight,    # вместо списка highlight_proc_names
 			self.highlight_attr,
 			self.highlight_color,
 			self.color_enabled,
 			self.console_cfg,
 		)
+
 		with self.print_lock:
 			print(formatted)
 
@@ -108,6 +132,7 @@ class NetworkMonitor:
 					self.config["target_processes"],
 					self.game_name,
 					self.config.get("skip_local_ips", True),
+					filter_by_target=not self.monitor_only,  # в monitor-only показываем все
 				)
 				now = time.time()
 				for conn in conns:
@@ -155,6 +180,7 @@ class NetworkMonitor:
 		finally:
 			if not self.monitor_only:
 				self.list_manager.flush_buffers()
+				self.list_manager.shutdown()  # ИЗМЕНЕНИЕ: остановка таймера
 			self.dns.shutdown()
 			self.executor.shutdown(wait=True)
 			logger.info("Мониторинг остановлен.")

@@ -14,7 +14,8 @@ namespace PlatformLauncher.Services
 
         public bool IsRunning => _process != null && !_process.HasExited;
 
-        public async Task StartAsync(string gameId, string listsPath, bool warpEnabled, string backupRoot = "./backups", bool monitorOnly = false)
+        // --- ИЗМЕНЁННЫЙ МЕТОД (убраны warpEnabled, backupRoot, noPorts) ---
+        public async Task StartAsync(string gameId, string listsPath, bool monitorOnly = false)
         {
             string pythonExe = PythonEnvironmentManager.GetVenvPythonPath();
             if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
@@ -24,9 +25,9 @@ namespace PlatformLauncher.Services
             if (!File.Exists(monitorScript))
                 throw new Exception($"Скрипт монитора не найден: {monitorScript}");
 
-            string args = $"\"{monitorScript}\" --game {gameId} --lists-path \"{listsPath}\" --backup-root {backupRoot}";
-            if (warpEnabled) args += " --warp";
-            if (monitorOnly) args += " --monitor-only --no-ports"; // мониторинг без портов и бэкапов
+            string args = $"\"{monitorScript}\" --game {gameId} --lists-path \"{listsPath}\"";
+            if (monitorOnly)
+                args += " --monitor-only";
 
             var psi = new ProcessStartInfo(pythonExe, args)
             {
@@ -59,6 +60,7 @@ namespace PlatformLauncher.Services
             }
         }
 
+        // Остановка процесса (без изменений)
         public async Task StopAsync(int timeoutMs = 10000)
         {
             if (_process == null || _process.HasExited) return;

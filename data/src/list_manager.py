@@ -1,17 +1,18 @@
 import os
 import threading
 import logging
+import time
 from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
 
 class ListManager:
-	def __init__(self, config, lists_path, readonly=False):
+	def __init__(self, config, lists_path, readonly=False, flush_interval=5.0):
 		self.config = config
 		self.lists_path = lists_path
 		self.lock = threading.RLock()
-		self.readonly_mode = readonly or not lists_path  # если путь пустой – readonly
+		self.readonly_mode = readonly or not lists_path
 
 		# кэши
 		self.preloaded_ips = set()
@@ -21,16 +22,23 @@ class ListManager:
 		self.exclude_ips_cache = set()
 		self.exclude_domains_cache = set()
 
-		# буферы для batch записи
+		# буферы
 		self.ip_buffer = set()
 		self.domain_buffer = set()
 		self.exclude_ip_buffer = set()
 		self.exclude_domain_buffer = set()
 		self.session_buffer = set()
 
+		# ИЗМЕНЕНИЕ: параметры таймера
+		self.flush_interval = flush_interval
+		self._last_flush = time.time()
+		self._stop_timer = False
+		self._timer_thread = None
+
 		if not self.readonly_mode and self.lists_path:
 			self._create_missing_files()
 			self._load_initial_data()
+			self._start_timer()
 
 	def _create_missing_files(self):
 		for fname in self.config["lists"].values():
@@ -104,6 +112,18 @@ class ListManager:
 			self.session_added_ips.update(self.preloaded_ips)
 			self.session_added_domains.update(self.preloaded_domains)
 
+	# ИЗМЕНЕНИЕ: запуск фонового таймера
+	def _start_timer(self):
+		def timer_loop():
+			while not self._stop_timer:
+				time.sleep(1)
+				if time.time() - self._last_flush >= self.flush_interval:
+					self._flush_buffers()
+					self._last_flush = time.time()
+
+		self._timer_thread = threading.Thread(target=timer_loop, daemon=True)
+		self._timer_thread.start()
+
 	def add_to_lists_files(self, ip, domain, proc_name="Unknown"):
 		if not self.lists_path or self.readonly_mode:
 			return
@@ -128,9 +148,7 @@ class ListManager:
 				self.domain_buffer.add(domain)
 				self.session_buffer.add(domain)
 				logger.info(f"[list-general] + {domain} (Process: {proc_name})")
-
-			if len(self.ip_buffer) >= 50 or len(self.domain_buffer) >= 50:
-				self._flush_buffers()
+			# ИЗМЕНЕНИЕ: убрана проверка на 50 – сброс по таймеру
 
 	def add_to_exclude_lists(self, ip, domain, proc_name="Unknown"):
 		if not self.lists_path or self.readonly_mode:
@@ -154,12 +172,7 @@ class ListManager:
 				self.exclude_domain_buffer.add(domain)
 				self.session_buffer.add(domain)
 				logger.info(f"[list-exclude] + {domain} (Process: {proc_name})")
-
-			if (
-				len(self.exclude_ip_buffer) >= 50
-				or len(self.exclude_domain_buffer) >= 50
-			):
-				self._flush_buffers()
+			# ИЗМЕНЕНИЕ: убрана проверка на 50
 
 	def flush_buffers(self):
 		self._flush_buffers()
@@ -241,3 +254,10 @@ class ListManager:
 					self.session_buffer.clear()
 				except Exception as e:
 					logger.error(f"Ошибка записи сессионного файла: {e}")
+
+	# ИЗМЕНЕНИЕ: метод для остановки таймера
+	def shutdown(self):
+		self._stop_timer = True
+		if self._timer_thread:
+			self._timer_thread.join(timeout=2)
+		self._flush_buffers()

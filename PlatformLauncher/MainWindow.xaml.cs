@@ -1,17 +1,18 @@
-﻿using PlatformLauncher.Models;
+﻿using Microsoft.Win32;
+using PlatformLauncher.Models;
 using PlatformLauncher.Services;
 using PlatformLauncher.Views;
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using Microsoft.Win32;
-using System.Diagnostics;
-using System.Text;
-using System.Windows.Media; // <-- для VisualTreeHelper
+using System.Windows.Media;
 
 namespace PlatformLauncher
 {
@@ -21,6 +22,10 @@ namespace PlatformLauncher
         private PythonProcessManager _pythonManager = new PythonProcessManager();
         private GamePreset _selectedGame;
         private string _listsPath;
+        private BackupManager _backupManager;
+        private string _currentBackupDir;
+        private bool _backupRestored = false;
+        private bool _warpStartedByUs = false; // флаг, чтобы отключать WARP только если мы его включили
 
         public bool IsAdministrator { get; }
 
@@ -83,12 +88,51 @@ namespace PlatformLauncher
 
                 OpenListsButton.IsEnabled = true;
                 await LoadPresets();
+
+                if (!string.IsNullOrEmpty(_listsPath))
+                    await CheckAndRestoreBackups();
+
                 UpdateStartButtonText();
             }
             catch (Exception ex)
             {
                 LauncherLogger.Error($"Ошибка при загрузке: {ex}");
                 MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task CheckAndRestoreBackups()
+        {
+            var presets = UpdateService.LoadPresets();
+            foreach (var game in presets.Where(g => g.Installed))
+            {
+                var backupMgr = new BackupManager("./backups", game.Id);
+                var unrestored = backupMgr.GetUnrestoredBackups();
+                if (unrestored.Count == 0) continue;
+
+                var latest = unrestored.OrderByDescending(d => Directory.GetCreationTime(d)).First();
+                var creationTime = Directory.GetCreationTime(latest);
+                string msg = $"Обнаружен незавершённый бэкап игры \"{game.Name}\" от {creationTime:dd.MM.yyyy HH:mm}.\nВосстановить папку lists?";
+
+                var result = MessageBox.Show(msg, "Восстановление бэкапа", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result == MessageBoxResult.Yes)
+                {
+                    bool restored = await backupMgr.RestoreBackupAsync(_listsPath, latest);
+                    if (restored)
+                        AppendConsoleOutput($"✅ Бэкап для {game.Name} восстановлен");
+                    else
+                        AppendConsoleOutput($"⚠️ Ошибка восстановления бэкапа для {game.Name}");
+                }
+                else
+                {
+                    backupMgr.MarkAsNoRestore(latest);
+                    AppendConsoleOutput($"ℹ️ Бэкап для {game.Name} помечен как невосстанавливаемый");
+                }
+
+                foreach (var other in unrestored.Where(d => d != latest))
+                {
+                    backupMgr.MarkAsNoRestore(other);
+                }
             }
         }
 
@@ -107,8 +151,11 @@ namespace PlatformLauncher
         private void FilterGames()
         {
             bool onlyInstalled = ShowOnlyInstalledCheckBox.IsChecked == true;
+            bool onlyLocal = ShowOnlyLocalCheckBox.IsChecked == true;
+
             var filtered = _allPresets
-                .Where(p => !onlyInstalled || IsInstalled(p.Id))
+                .Where(p => (!onlyInstalled || IsInstalled(p.Id)) &&
+                            (!onlyLocal || IsLocal(p.Id)))
                 .OrderBy(p => IsInstalled(p.Id) ? 0 : 1)
                 .ThenBy(p => p.Name)
                 .ToList();
@@ -120,6 +167,12 @@ namespace PlatformLauncher
             var presets = UpdateService.LoadPresets();
             var p = presets.Find(g => g.Id == gameId);
             return p != null && p.Installed;
+        }
+
+        private bool IsLocal(string gameId)
+        {
+            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{gameId}.yaml");
+            return File.Exists(configPath);
         }
 
         private void UpdateStartButtonText()
@@ -141,7 +194,6 @@ namespace PlatformLauncher
                 return;
             }
 
-            // Установлен
             StartButton.Content = "Запустить фикс";
             StartButton.IsEnabled = IsAdministrator;
             MonitorButton.IsEnabled = true;
@@ -170,6 +222,11 @@ namespace PlatformLauncher
 
         private void OpenListsButton_Click(object sender, RoutedEventArgs e)
         {
+            ((Button)sender).ContextMenu.IsOpen = true;
+        }
+
+        private void SelectListsPath_Click(object sender, RoutedEventArgs e)
+        {
             var dialog = new OpenFolderDialog();
             dialog.Title = "Выберите папку lists";
             if (dialog.ShowDialog() == true)
@@ -177,6 +234,14 @@ namespace PlatformLauncher
                 _listsPath = dialog.FolderName;
                 StatusBarText.Text = $"Папка lists: {_listsPath}";
             }
+        }
+
+        private void OpenListsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(_listsPath) && Directory.Exists(_listsPath))
+                Process.Start("explorer.exe", _listsPath);
+            else
+                MessageBox.Show("Папка lists не выбрана или не существует.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         private async void InstallGame_Click(object sender, RoutedEventArgs e)
@@ -224,40 +289,9 @@ namespace PlatformLauncher
             return process.ExitCode == 0;
         }
 
-        // Исправленный метод поиска ProgressBar
-        private void SetInstallProgress(string gameId, bool show)
+        private void SetInstallProgress(GamePreset preset, bool show)
         {
-            foreach (var item in GamesListBox.Items)
-            {
-                var preset = item as GamePreset;
-                if (preset?.Id == gameId)
-                {
-                    var container = GamesListBox.ItemContainerGenerator.ContainerFromItem(item) as ListBoxItem;
-                    if (container != null)
-                    {
-                        var pb = FindVisualChild<ProgressBar>(container);
-                        if (pb != null)
-                        {
-                            pb.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-
-        private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
-        {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T t)
-                    return t;
-                var result = FindVisualChild<T>(child);
-                if (result != null)
-                    return result;
-            }
-            return null;
+            preset.IsInstalling = show;
         }
 
         private async Task InstallGame(GamePreset preset)
@@ -268,7 +302,7 @@ namespace PlatformLauncher
                 AppendConsoleOutput($"⏳ Установка {preset.Name}...");
                 LauncherLogger.Info($"Начало установки {preset.Id}");
 
-                SetInstallProgress(preset.Id, true);
+                SetInstallProgress(preset, true);
 
                 var (success, error) = await UpdateService.InstallGameAsync(preset);
                 LauncherLogger.Info($"Результат установки: success={success}");
@@ -278,15 +312,28 @@ namespace PlatformLauncher
                     MessageBox.Show($"Ошибка установки {preset.Name}:\n{error}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                     StatusBarText.Text = "Ошибка";
                     AppendConsoleOutput($"❌ Ошибка: {error}");
-                    SetInstallProgress(preset.Id, false);
+                    SetInstallProgress(preset, false);
                     return;
                 }
 
                 AppendConsoleOutput($"✅ Конфиг скачан");
                 LauncherLogger.Info($"Конфиг {preset.Id} скачан");
 
-                AppendConsoleOutput("📌 Установка правил портов...");
-                await RunPythonScript($"--install-rules {preset.Id}");
+                var config = UpdateService.LoadGameConfig(preset.Id);
+                if (config?.Ports != null)
+                {
+                    AppendConsoleOutput("📌 Установка правил портов...");
+                    var pm = new PortsManager(preset.Id);
+                    var (portOk, portError) = await pm.AddRulesAsync(config.Ports.Tcp, config.Ports.Udp);
+                    if (portOk)
+                        AppendConsoleOutput("✅ Правила портов добавлены");
+                    else
+                        AppendConsoleOutput($"❌ Ошибка добавления правил портов: {portError}");
+                }
+                else
+                {
+                    AppendConsoleOutput("ℹ️ В конфиге нет портов");
+                }
 
                 LauncherLogger.Info("Перезагрузка списка пресетов");
                 var freshPresets = UpdateService.LoadPresets();
@@ -308,7 +355,7 @@ namespace PlatformLauncher
                 AppendConsoleOutput($"✅ Фикс {preset.Name} установлен");
                 LauncherLogger.Info($"Установка {preset.Id} завершена");
 
-                SetInstallProgress(preset.Id, false);
+                SetInstallProgress(preset, false);
                 MessageBox.Show($"Фикс {preset.Name} установлен", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -317,7 +364,7 @@ namespace PlatformLauncher
                 AppendConsoleOutput($"❌ Ошибка: {ex.Message}");
                 MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText.Text = "Ошибка";
-                SetInstallProgress(preset.Id, false);
+                SetInstallProgress(preset, false);
             }
         }
 
@@ -326,21 +373,18 @@ namespace PlatformLauncher
             var preset = GamesListBox.SelectedItem as GamePreset;
             if (preset == null) return;
 
-            AppendConsoleOutput($"⏳ Удаление {preset.Name}...");
-            LauncherLogger.Info($"Начало удаления {preset.Id}");
-
-            if (MessageBox.Show($"Удалить фикс {preset.Name}? Это также удалит правила портов.",
-                "Подтверждение", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-                return;
-
-            if (_pythonManager.IsRunning && _selectedGame?.Id == preset.Id)
-                await StopPythonProcessAsync();
+            preset.IsUninstalling = true;
 
             AppendConsoleOutput("📌 Удаление правил портов...");
-            await RunPythonScript($"--remove-rules {preset.Id}");
+            var pm = new PortsManager(preset.Id);
+            var (removed, removeError) = await pm.RemoveAllRulesAsync();
+            if (removed)
+                AppendConsoleOutput("✅ Правила портов удалены");
+            else
+                AppendConsoleOutput($"❌ Ошибка удаления правил портов: {removeError}");
 
             UpdateService.UninstallGame(preset.Id);
-            LauncherLogger.Info($"Конфиг {preset.Id} удалён");
+            LauncherLogger.Info($"Конфиг {preset.Id} помечен как неустановленный");
 
             var freshPresets = UpdateService.LoadPresets();
             _allPresets.Clear();
@@ -357,9 +401,11 @@ namespace PlatformLauncher
 
             UpdateStartButtonText();
             StatusBarText.Text = "Готово";
-            AppendConsoleOutput($"✅ Фикс {preset.Name} удалён");
+            AppendConsoleOutput($"✅ Фикс {preset.Name} удалён (конфиг сохранён)");
             LauncherLogger.Info($"Удаление {preset.Id} завершено");
             MessageBox.Show($"Фикс {preset.Name} удалён", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            preset.IsUninstalling = false;
         }
 
         private void PropertiesGame_Click(object sender, RoutedEventArgs e)
@@ -375,7 +421,32 @@ namespace PlatformLauncher
 
         private void GamesListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            var menu = (sender as ListBox)?.ContextMenu;
+            var source = e.OriginalSource as DependencyObject;
+            if (source == null) return;
+
+            ContextMenu menu = null;
+            DependencyObject current = source;
+            while (current != null)
+            {
+                if (current is FrameworkElement fe && fe.ContextMenu != null)
+                {
+                    menu = fe.ContextMenu;
+                    break;
+                }
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            if (menu == null)
+            {
+                var item = FindParent<ListBoxItem>(source);
+                if (item != null)
+                {
+                    var textBlock = FindVisualChild<TextBlock>(item);
+                    if (textBlock?.ContextMenu != null)
+                        menu = textBlock.ContextMenu;
+                }
+            }
+
             if (menu == null) return;
 
             var preset = GamesListBox.SelectedItem as GamePreset;
@@ -414,6 +485,7 @@ namespace PlatformLauncher
             }
 
             bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
+
             if (string.IsNullOrEmpty(_listsPath))
             {
                 MessageBox.Show("Папка lists не найдена. Укажите путь через кнопку LISTS.",
@@ -421,11 +493,31 @@ namespace PlatformLauncher
                 return;
             }
 
+            _backupRestored = false;
+            _backupManager = new BackupManager("./backups", _selectedGame.Id);
+            _currentBackupDir = await _backupManager.CreateBackupAsync(_listsPath);
+            AppendConsoleOutput($"✅ Бэкап создан: {_currentBackupDir}");
+
+            _warpStartedByUs = false;
+            if (warpEnabled)
+            {
+                AppendConsoleOutput("⏳ Запуск WARP...");
+                bool warpStarted = await WarpManager.EnsureStartedAsync();
+                if (warpStarted)
+                {
+                    AppendConsoleOutput("✅ WARP запущен");
+                    _warpStartedByUs = true;
+                }
+                else
+                    AppendConsoleOutput("⚠️ Не удалось запустить WARP");
+            }
+
             ConsoleOutputTextBox.Clear();
-            AppendConsoleOutput($"Запуск фикса {_selectedGame.Name}...");
+            AppendConsoleOutput($"Запуск мониторинга {_selectedGame.Name}...");
+
             try
             {
-                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, warpEnabled, "./backups", monitorOnly: false);
+                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, monitorOnly: false);
                 StartButton.IsEnabled = false;
                 MonitorButton.IsEnabled = false;
                 StopButton.IsEnabled = true;
@@ -436,7 +528,7 @@ namespace PlatformLauncher
             {
                 LauncherLogger.Error($"Ошибка запуска: {ex}");
                 AppendConsoleOutput($"Ошибка: {ex.Message}");
-                StartButton.IsEnabled = true;
+                StartButton.IsEnabled = IsAdministrator;
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
@@ -455,11 +547,11 @@ namespace PlatformLauncher
             }
 
             ConsoleOutputTextBox.Clear();
-            AppendConsoleOutput($"Запуск мониторинга {_selectedGame.Name}...");
+            AppendConsoleOutput($"Запуск мониторинга (только просмотр) {_selectedGame.Name}...");
+
             try
             {
-                bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
-                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, warpEnabled, "./backups", monitorOnly: true);
+                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, monitorOnly: true);
                 StartButton.IsEnabled = false;
                 MonitorButton.IsEnabled = false;
                 StopButton.IsEnabled = true;
@@ -475,6 +567,7 @@ namespace PlatformLauncher
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
             }
+            // В мониторинге бэкапов нет, поэтому finally не нужен
         }
 
         private async void StopButton_Click(object sender, RoutedEventArgs e)
@@ -487,6 +580,15 @@ namespace PlatformLauncher
             if (!_pythonManager.IsRunning) return;
             AppendConsoleOutput("Остановка процесса...");
             await _pythonManager.StopAsync();
+
+            if (_warpStartedByUs)
+            {
+                AppendConsoleOutput("⏳ Остановка WARP...");
+                await WarpManager.DisconnectAsync();
+                AppendConsoleOutput("✅ WARP остановлен");
+                _warpStartedByUs = false;
+            }
+
             StartButton.IsEnabled = IsAdministrator;
             MonitorButton.IsEnabled = true;
             StopButton.IsEnabled = false;
@@ -495,9 +597,11 @@ namespace PlatformLauncher
             UpdateStartButtonText();
         }
 
+        private int _restoreInProgress = 0;
+
         private void OnPythonProcessExited(int exitCode)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.Invoke(async () =>
             {
                 StartButton.IsEnabled = IsAdministrator;
                 MonitorButton.IsEnabled = true;
@@ -505,6 +609,43 @@ namespace PlatformLauncher
                 StatusTextBlock.Text = "Завершён";
                 StatusBarText.Text = $"Процесс завершён с кодом {exitCode}";
                 AppendConsoleOutput($"Процесс завершён (код {exitCode})");
+
+                // Восстановление только один раз
+                if (Interlocked.CompareExchange(ref _restoreInProgress, 1, 0) == 0)
+                {
+                    try
+                    {
+                        if (!_backupRestored && _backupManager != null && !string.IsNullOrEmpty(_currentBackupDir))
+                        {
+                            bool restored = await _backupManager.RestoreBackupAsync(_listsPath, _currentBackupDir);
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (restored)
+                                {
+                                    AppendConsoleOutput("✅ Бэкап восстановлен");
+                                    _backupRestored = true;
+                                }
+                                else
+                                    AppendConsoleOutput("⚠️ Ошибка восстановления бэкапа");
+                                _currentBackupDir = null;
+                                _backupManager = null;
+                            });
+                        }
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _restoreInProgress, 0);
+                    }
+                }
+
+                if (_warpStartedByUs)
+                {
+                    AppendConsoleOutput("⏳ Остановка WARP...");
+                    await WarpManager.DisconnectAsync();
+                    AppendConsoleOutput("✅ WARP остановлен");
+                    _warpStartedByUs = false;
+                }
+
                 UpdateStartButtonText();
             });
         }
@@ -527,5 +668,28 @@ namespace PlatformLauncher
         }
 
         private void FilterGames_Changed(object sender, RoutedEventArgs e) => FilterGames();
+
+        // ИСПРАВЛЕНИЕ: методы возвращают null
+        private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T t)
+                    return t;
+                var result = FindVisualChild<T>(child);
+                if (result != null)
+                    return result;
+            }
+            return null; // добавлено
+        }
+
+        private T FindParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            var parent = VisualTreeHelper.GetParent(child);
+            while (parent != null && !(parent is T))
+                parent = VisualTreeHelper.GetParent(parent);
+            return parent as T; // может быть null
+        }
     }
 }

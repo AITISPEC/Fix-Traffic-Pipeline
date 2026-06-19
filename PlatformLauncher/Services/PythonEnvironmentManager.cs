@@ -76,14 +76,14 @@ namespace PlatformLauncher.Services
                 proc.WaitForExit(2000);
                 if (proc.ExitCode != 0) return null;
                 string output = proc.StandardOutput.ReadToEnd();
-                // проверяем версию 3.12+
+                // проверяем версию 3.13+
                 if (output.Contains("Python 3."))
                 {
                     var parts = output.Split('.');
                     if (parts.Length >= 2 && int.TryParse(parts[0].Replace("Python ", ""), out int major) &&
                         int.TryParse(parts[1], out int minor))
                     {
-                        if (major == 3 && minor >= 12)
+                        if (major == 3 && minor >= 13)
                             return "python";
                     }
                 }

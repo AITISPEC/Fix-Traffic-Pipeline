@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using YamlDotNet.Serialization;
@@ -13,6 +14,7 @@ namespace PlatformLauncher.Services
         private static readonly HttpClient _httpClient = new HttpClient();
         private static readonly string PresetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
         private const string RemotePresetsUrl = "https://raw.githubusercontent.com/AITISPEC/Fix-Traffic-Pipeline/main/data/configs/presets.yaml";
+        private static readonly string ConfigsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
 
         static UpdateService()
         {
@@ -22,9 +24,7 @@ namespace PlatformLauncher.Services
         public static PresetsFile LoadPresetsFile()
         {
             if (!File.Exists(PresetsPath))
-            {
                 return new PresetsFile { Games = new List<GamePreset>() };
-            }
             try
             {
                 var yaml = File.ReadAllText(PresetsPath);
@@ -57,14 +57,40 @@ namespace PlatformLauncher.Services
 
         public static List<GamePreset> LoadPresets()
         {
-            var file = LoadPresetsFile();
-            return file.Games;
+            var allGames = new List<GamePreset>();
+            var presetsFile = LoadPresetsFile();
+            allGames.AddRange(presetsFile.Games);
+
+            if (Directory.Exists(ConfigsFolder))
+            {
+                var localFiles = Directory.GetFiles(ConfigsFolder, "*.yaml")
+                                           .Where(f => !f.EndsWith("presets.yaml"))
+                                           .Select(Path.GetFileNameWithoutExtension)
+                                           .Where(id => !string.IsNullOrEmpty(id));
+                foreach (var id in localFiles)
+                {
+                    if (!allGames.Any(g => g.Id == id))
+                    {
+                        var config = LoadGameConfig(id);
+                        if (config != null)
+                        {
+                            var preset = new GamePreset
+                            {
+                                Id = id,
+                                Name = id,
+                                ConfigUrl = null,
+                                WarpSupported = config.WarpSupported ?? false,
+                                Version = config.Version ?? 1,
+                                Installed = true
+                            };
+                            allGames.Add(preset);
+                        }
+                    }
+                }
+            }
+            return allGames;
         }
 
-        /// <summary>
-        /// Синхронизирует локальный presets.yaml с удалённым (скачивает по raw-ссылке).
-        /// Сохраняет статус Installed для существующих игр.
-        /// </summary>
         public static async Task<bool> SyncFromGitHubAsync()
         {
             try
@@ -73,15 +99,11 @@ namespace PlatformLauncher.Services
                 using var response = await _httpClient.GetAsync(RemotePresetsUrl);
                 if (!response.IsSuccessStatusCode)
                 {
-                    string error = $"Ошибка загрузки presets.yaml: {response.StatusCode}";
-                    LauncherLogger.Error(error);
-                    // При ошибке (404 и т.п.) локальные пресеты не изменяем
+                    LauncherLogger.Error($"Ошибка загрузки presets.yaml: {response.StatusCode}");
                     return false;
                 }
 
                 var remoteYaml = await response.Content.ReadAsStringAsync();
-                LauncherLogger.Info($"Получен ответ, длина: {remoteYaml.Length} символов");
-
                 var deserializer = new DeserializerBuilder().Build();
                 PresetsFile remotePresets;
                 try
@@ -101,11 +123,8 @@ namespace PlatformLauncher.Services
                 }
 
                 var localPresets = LoadPresetsFile();
-                var localDict = new Dictionary<string, GamePreset>();
-                foreach (var g in localPresets.Games)
-                    localDict[g.Id] = g;
+                var localDict = localPresets.Games.ToDictionary(g => g.Id);
 
-                bool changed = false;
                 foreach (var remoteGame in remotePresets.Games)
                 {
                     if (localDict.TryGetValue(remoteGame.Id, out var localGame))
@@ -116,41 +135,17 @@ namespace PlatformLauncher.Services
                         localGame.WarpSupported = remoteGame.WarpSupported;
                         localGame.Version = remoteGame.Version;
                         localGame.Installed = wasInstalled;
-                        changed = true;
                     }
                     else
                     {
                         remoteGame.Installed = false;
                         localPresets.Games.Add(remoteGame);
-                        changed = true;
                     }
                 }
 
-                var remoteIds = new HashSet<string>();
-                foreach (var g in remotePresets.Games)
-                    remoteIds.Add(g.Id);
-
-                var toRemove = new List<GamePreset>();
-                foreach (var g in localPresets.Games)
-                {
-                    if (!remoteIds.Contains(g.Id))
-                        toRemove.Add(g);
-                }
-                foreach (var g in toRemove)
-                {
-                    localPresets.Games.Remove(g);
-                    changed = true;
-                }
-
-                if (changed)
-                {
-                    SavePresetsFile(localPresets);
-                    LauncherLogger.Info("Синхронизация завершена, presets.yaml обновлён");
-                }
-                else
-                {
-                    LauncherLogger.Info("Синхронизация не выявила изменений");
-                }
+                // локальные игры, которых нет в удалённых, остаются
+                SavePresetsFile(localPresets);
+                LauncherLogger.Info("Синхронизация завершена, presets.yaml обновлён");
                 return true;
             }
             catch (Exception ex)
@@ -167,6 +162,18 @@ namespace PlatformLauncher.Services
                 string configDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
                 if (!Directory.Exists(configDir)) Directory.CreateDirectory(configDir);
                 string localConfigPath = Path.Combine(configDir, $"{preset.Id}.yaml");
+
+                if (string.IsNullOrEmpty(preset.ConfigUrl))
+                {
+                    var presetsFile = LoadPresetsFile();
+                    var localPreset = presetsFile.Games.Find(g => g.Id == preset.Id);
+                    if (localPreset != null)
+                    {
+                        localPreset.Installed = true;
+                        SavePresetsFile(presetsFile);
+                    }
+                    return (true, null);
+                }
 
                 LauncherLogger.Info($"Загрузка конфига {preset.Name} с {preset.ConfigUrl}");
                 using (var response = await _httpClient.GetAsync(preset.ConfigUrl))
@@ -197,12 +204,12 @@ namespace PlatformLauncher.Services
                     LauncherLogger.Info($"Конфиг {preset.Name} сохранён в {localConfigPath}");
                 }
 
-                var presets = LoadPresetsFile();
-                var localPreset = presets.Games.Find(g => g.Id == preset.Id);
-                if (localPreset != null)
+                var presetsFileAfter = LoadPresetsFile();
+                var localPresetAfter = presetsFileAfter.Games.Find(g => g.Id == preset.Id);
+                if (localPresetAfter != null)
                 {
-                    localPreset.Installed = true;
-                    SavePresetsFile(presets);
+                    localPresetAfter.Installed = true;
+                    SavePresetsFile(presetsFileAfter);
                 }
                 return (true, null);
             }
@@ -216,22 +223,18 @@ namespace PlatformLauncher.Services
 
         public static void UninstallGame(string gameId)
         {
-            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{gameId}.yaml");
-            if (File.Exists(configPath))
-                File.Delete(configPath);
-
-            var presets = LoadPresetsFile();
-            var preset = presets.Games.Find(g => g.Id == gameId);
+            var presetsFile = LoadPresetsFile();
+            var preset = presetsFile.Games.Find(g => g.Id == gameId);
             if (preset != null)
             {
                 preset.Installed = false;
-                SavePresetsFile(presets);
+                SavePresetsFile(presetsFile);
             }
         }
 
         public static GameConfig LoadGameConfig(string gameId)
         {
-            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{gameId}.yaml");
+            string configPath = Path.Combine(ConfigsFolder, $"{gameId}.yaml");
             if (!File.Exists(configPath)) return null;
             try
             {

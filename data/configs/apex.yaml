@@ -114,12 +114,38 @@ dns_timeout: 2.0
 dns_resolve_statuses:
   - "SYN_SENT"
 
-console:
-  max_proc_width: 20
-  max_ip_width: 16
-  max_port_width: 6
-  max_domain_width: 30
-
 color_console: true
 skip_local_ips: true
 highlight_style: "BRIGHT_WHITE"
+
+list_rules:
+  SYN_SENT:
+    action: add_to_main
+    target: both
+  ESTABLISHED:
+    action: ignore
+    target: none
+  TIME_WAIT:
+    action: ignore
+    target: none
+  CLOSE_WAIT:
+    action: add_to_exclude
+    target: both
+  FIN_WAIT1:
+    action: ignore
+    target: none
+  FIN_WAIT2:
+    action: ignore
+    target: none
+  LAST_ACK:
+    action: ignore
+    target: none
+  CLOSING:
+    action: ignore
+    target: none
+  LISTEN:
+    action: ignore
+    target: none
+  NONE:
+    action: ignore
+    target: none

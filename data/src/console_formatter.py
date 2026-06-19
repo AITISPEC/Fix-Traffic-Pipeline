@@ -74,7 +74,7 @@ def format_connection(
 	domain,
 	status,
 	count,
-	highlight_proc_names,
+	highlight,  # bool
 	highlight_attr,
 	highlight_color,
 	color_enabled,
@@ -101,7 +101,13 @@ def format_connection(
 			status_color = Fore.GREEN
 		elif status == "TIME_WAIT":
 			status_color = Fore.MAGENTA
-		elif status in ("CLOSE_WAIT", "FIN_WAIT1", "FIN_WAIT2", "LAST_ACK", "CLOSING"):
+		elif status in (
+			"CLOSE_WAIT",
+			"FIN_WAIT1",
+			"FIN_WAIT2",
+			"LAST_ACK",
+			"CLOSING",
+		):
 			status_color = Fore.RED
 		else:
 			status_color = Fore.CYAN
@@ -112,21 +118,18 @@ def format_connection(
 		else:
 			domain_display = f"{Fore.WHITE}{domain_display}{Style.RESET_ALL}"
 
-		highlight = proc_name.lower() in [p.lower() for p in highlight_proc_names]
 		if highlight:
 			attr = highlight_attr or ""
-			if highlight_color:
-				highlighted_proc = attr + highlight_color + proc_name
-			else:
-				highlighted_proc = attr + proc_name
+			color = highlight_color or Fore.WHITE
+			# Подсвечиваем только имя процесса (часть main_part)
+			# Заменяем proc_name на подсвеченный
+			highlighted_proc = attr + color + proc_name + Style.RESET_ALL
 			colored_main = colored_main.replace(proc_name, highlighted_proc, 1)
 
 		return f"{icon}{count_badge} {colored_main} ({domain_display})"
 	else:
-		# монохромный режим
-		if highlight_proc_names and proc_name.lower() in [
-			p.lower() for p in highlight_proc_names
-		]:
+		# монохром
+		if highlight:
 			main_plain = main_part.replace(proc_name, f"[{proc_name}]", 1)
 		else:
 			main_plain = main_part

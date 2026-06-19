@@ -13,12 +13,16 @@ def is_local_ip(ip, skip_local_ips=True):
 		return False
 
 
-def get_connections(target_processes, game_id, skip_local_ips=True):
+def get_connections(
+	target_processes, game_id, skip_local_ips=True, filter_by_target=True
+):
 	connections = []
 	try:
 		net_conns = psutil.net_connections(kind="all")
 	except Exception:
 		return connections
+
+	target_names = {rule["name"].lower() for rule in target_processes}
 
 	for conn in net_conns:
 		if conn.family not in (socket.AF_INET, socket.AF_INET6):
@@ -29,7 +33,6 @@ def get_connections(target_processes, game_id, skip_local_ips=True):
 		if is_local_ip(remote_ip, skip_local_ips):
 			continue
 
-		# имя процесса
 		try:
 			proc = psutil.Process(conn.pid)
 			proc_name = proc.name()
@@ -38,21 +41,20 @@ def get_connections(target_processes, game_id, skip_local_ips=True):
 		except (psutil.NoSuchProcess, psutil.AccessDenied):
 			proc_name = "Unknown"
 
-		# проверка, входит ли процесс в целевые
-		target = False
+		is_target = False
 		for rule in target_processes:
 			if proc_name.lower() == rule["name"].lower():
 				if rule.get("check_path", False):
 					try:
 						exe = proc.exe().lower()
-						# вместо жёсткого списка проверяем, что путь содержит game_id
 						if game_id.lower() not in exe:
 							continue
 					except Exception:
 						continue
-				target = True
+				is_target = True
 				break
-		if not target:
+
+		if filter_by_target and not is_target:
 			continue
 
 		connections.append(
@@ -65,6 +67,7 @@ def get_connections(target_processes, game_id, skip_local_ips=True):
 				"raddr_port": conn.raddr.port,
 				"status": conn.status,
 				"family": conn.family,
+				"is_target": is_target,
 			}
 		)
 	return connections

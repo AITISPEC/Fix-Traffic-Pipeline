@@ -1,8 +1,9 @@
-﻿using YamlDotNet.Serialization;
+﻿using System.ComponentModel;
+using YamlDotNet.Serialization;
 
 namespace PlatformLauncher.Models
 {
-    public class GamePreset
+    public class GamePreset : INotifyPropertyChanged
     {
         [YamlMember(Alias = "id")]
         public string Id { get; set; }
@@ -21,5 +22,24 @@ namespace PlatformLauncher.Models
 
         [YamlMember(Alias = "installed")]
         public bool Installed { get; set; } = false;
+
+        // ИЗМЕНЕНИЕ: новые свойства для прогресса
+        private bool _isInstalling;
+        public bool IsInstalling
+        {
+            get => _isInstalling;
+            set { _isInstalling = value; OnPropertyChanged(); }
+        }
+
+        private bool _isUninstalling;
+        public bool IsUninstalling
+        {
+            get => _isUninstalling;
+            set { _isUninstalling = value; OnPropertyChanged(); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
