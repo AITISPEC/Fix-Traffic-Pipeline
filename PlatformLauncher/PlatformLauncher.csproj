@@ -17,7 +17,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Update="move_files.bat">
+	  <None Update="copy_files.bat">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </None>
 	</ItemGroup>
@@ -39,8 +39,7 @@
 
 		<!-- Перемещаем управляемые DLL (исключая нативные и сам EXE) -->
 		<ItemGroup>
-			<_ManagedDlls Include="$(TargetDir)*.dll"
-						  Exclude="$(TargetDir)$(TargetName).dll;$(TargetDir)Microsoft.Terminal.Control.dll;$(TargetDir)conpty.dll" />
+			<_ManagedDlls Include="$(TargetDir)*.dll" Exclude="$(TargetDir)$(TargetName).dll;$(TargetDir)Microsoft.Terminal.Control.dll;$(TargetDir)conpty.dll" />
 		</ItemGroup>
 		<Move SourceFiles="@(_ManagedDlls)" DestinationFolder="$(TargetDir)libs" OverwriteReadOnlyFiles="true" />
 	</Target>

@@ -4,7 +4,7 @@
         xmlns:views="clr-namespace:PlatformLauncher.Views"
         xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
         Title="Platform Launcher" Height="600" Width="918"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -73,6 +73,7 @@
 
                         <!-- Терминал вместо TextBox -->
                         <term:EasyTerminalControl x:Name="ConsoleOutputTerminal"
+                                                  FontSizeWhenSettingTheme="10"
                                                   Grid.Row="1"
                                                   Background="Black"
                                                   StartupCommandLine="cmd.exe /c"
@@ -88,7 +89,7 @@
                             <TextBlock x:Name="StatusTextBlock" Text="Готов" Margin="20,0,0,0" VerticalAlignment="Center"/>
 
                             <!-- Кнопка "Ввод" справа -->
-                            <Button x:Name="InputButton" Content="Ввод" Width="60" Click="InputButton_Click" Margin="200,0,0,0" FontSize="11">
+                            <Button x:Name="InputButton" Content="Команды" Width="60" Click="InputButton_Click" Margin="148,0,0,0" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right">
                                 <Button.ContextMenu>
                                     <ContextMenu x:Name="InputContextMenu">
                                         <MenuItem Header="python -V" Click="InputMenu_Click" Tag="python -V"/>

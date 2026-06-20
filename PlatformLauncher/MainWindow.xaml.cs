@@ -14,37 +14,32 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace PlatformLauncher
 {
     public partial class MainWindow : Window
     {
         private ObservableCollection<GamePreset> _allPresets = new ObservableCollection<GamePreset>();
-        private PythonProcessManager _pythonManager = new PythonProcessManager();
         private GamePreset _selectedGame;
         private string _listsPath;
-        private BackupManager _backupManager;
-        private string _currentBackupDir;
-        private bool _backupRestored = false;
-        private bool _warpStartedByUs = false;
-        private StreamWriter _terminalLogWriter; // для логирования вывода в файл
+        private StreamWriter _terminalLogWriter;
+
+        // Менеджер сессии (запуск/остановка мониторинга, WARP, бэкапы)
+        private GameSessionManager _gameSessionManager;
 
         public bool IsAdministrator { get; }
 
         public static MainWindow Instance { get; private set; }
 
-        public MainWindow() 
+        public MainWindow()
         {
             InitializeComponent();
             Instance = this;
             IsAdministrator = IsCurrentUserAdministrator();
             Loaded += MainWindow_Loaded;
-            _pythonManager.OutputReceived += AppendConsoleOutput;
-            _pythonManager.ProcessExited += OnPythonProcessExited;
             UpdateStartButtonText();
-
-            // Настройка темы терминала (можно задать по умолчанию)
-            SetTerminalTheme("Light"); // или "Dark"
+            SetTerminalTheme("Light");
         }
 
         private static bool IsCurrentUserAdministrator()
@@ -54,10 +49,19 @@ namespace PlatformLauncher
             return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
         }
 
+        private void ApplyAppConfig()
+        {
+            var config = ConfigService.Load();
+            SetTerminalTheme(config.Terminal.Theme);
+            ConsoleOutputTerminal.FontFamilyWhenSettingTheme = new FontFamily(config.Terminal.FontFamily);
+            ConsoleOutputTerminal.FontSizeWhenSettingTheme = config.Terminal.FontSize;
+        }
+
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             try
             {
+                ApplyAppConfig();
                 AppendConsoleOutput("Проверка окружения Python...");
                 var progress = new Progress<string>(msg => AppendConsoleOutput(msg));
                 bool envOk = await PythonEnvironmentManager.EnsureEnvironmentAsync(
@@ -111,7 +115,6 @@ namespace PlatformLauncher
 
                 AppendConsoleOutput("===== ТЕРМИНАЛ ЗАПУЩЕН =====");
                 AppendConsoleOutput("Тестовая строка с цветом \x1b[32mзелёный\x1b[0m и \x1b[31mкрасный\x1b[0m");
-
             }
             catch (Exception ex)
             {
@@ -270,44 +273,6 @@ namespace PlatformLauncher
             await InstallGame(preset);
         }
 
-        private async Task<bool> RunPythonScript(string arguments)
-        {
-            string pythonExe = PythonEnvironmentManager.GetVenvPythonPath();
-            if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
-            {
-                AppendConsoleOutput("❌ Виртуальное окружение Python не найдено.");
-                return false;
-            }
-
-            string monitorScript = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "monitor.py");
-            if (!File.Exists(monitorScript))
-            {
-                AppendConsoleOutput($"❌ Скрипт монитора не найден: {monitorScript}");
-                return false;
-            }
-
-            var psi = new ProcessStartInfo(pythonExe, $"\"{monitorScript}\" {arguments}")
-            {
-                WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
-            };
-
-            using var process = new Process { StartInfo = psi };
-            process.OutputDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) AppendConsoleOutput(e.Data); };
-            process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) AppendConsoleOutput($"⚠️ {e.Data}"); };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            await process.WaitForExitAsync();
-            return process.ExitCode == 0;
-        }
-
         private void SetInstallProgress(GamePreset preset, bool show)
         {
             preset.IsInstalling = show;
@@ -317,64 +282,30 @@ namespace PlatformLauncher
         {
             try
             {
-                StatusBarText.Text = $"Установка {preset.Name}...";
-                AppendConsoleOutput($"⏳ Установка {preset.Name}...");
-                LauncherLogger.Info($"Начало установки {preset.Id}");
-
                 SetInstallProgress(preset, true);
-
-                var (success, error) = await UpdateService.InstallGameAsync(preset);
-                LauncherLogger.Info($"Результат установки: success={success}");
-
+                var progress = new Progress<string>(msg => AppendConsoleOutput(msg));
+                var (success, error) = await GameInstallService.InstallGameAsync(preset, progress);
                 if (!success)
                 {
                     MessageBox.Show($"Ошибка установки {preset.Name}:\n{error}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                    StatusBarText.Text = "Ошибка";
                     AppendConsoleOutput($"❌ Ошибка: {error}");
-                    SetInstallProgress(preset, false);
                     return;
                 }
 
-                AppendConsoleOutput($"✅ Конфиг скачан");
-                LauncherLogger.Info($"Конфиг {preset.Id} скачан");
-
-                var config = UpdateService.LoadGameConfig(preset.Id);
-                if (config?.Ports != null)
-                {
-                    AppendConsoleOutput("📌 Установка правил портов...");
-                    var pm = new PortsManager(preset.Id);
-                    var (portOk, portError) = await pm.AddRulesAsync(config.Ports.Tcp, config.Ports.Udp);
-                    if (portOk)
-                        AppendConsoleOutput("✅ Правила портов добавлены");
-                    else
-                        AppendConsoleOutput($"❌ Ошибка добавления правил портов: {portError}");
-                }
-                else
-                {
-                    AppendConsoleOutput("ℹ️ В конфиге нет портов");
-                }
-
-                LauncherLogger.Info("Перезагрузка списка пресетов");
+                // Обновляем список пресетов
                 var freshPresets = UpdateService.LoadPresets();
                 _allPresets.Clear();
                 foreach (var p in freshPresets)
                     _allPresets.Add(p);
-
                 FilterGames();
 
                 _selectedGame = _allPresets.FirstOrDefault(p => p.Id == preset.Id);
                 if (_selectedGame != null)
-                {
                     GamesListBox.SelectedItem = _selectedGame;
-                    LauncherLogger.Info($"Выбран: {_selectedGame.Name}, Installed={_selectedGame.Installed}");
-                }
 
                 UpdateStartButtonText();
                 StatusBarText.Text = "Готово";
                 AppendConsoleOutput($"✅ Фикс {preset.Name} установлен");
-                LauncherLogger.Info($"Установка {preset.Id} завершена");
-
-                SetInstallProgress(preset, false);
                 MessageBox.Show($"Фикс {preset.Name} установлен", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -382,7 +313,9 @@ namespace PlatformLauncher
                 LauncherLogger.Error($"Критическая ошибка установки: {ex}");
                 AppendConsoleOutput($"❌ Ошибка: {ex.Message}");
                 MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText.Text = "Ошибка";
+            }
+            finally
+            {
                 SetInstallProgress(preset, false);
             }
         }
@@ -393,38 +326,43 @@ namespace PlatformLauncher
             if (preset == null) return;
 
             preset.IsUninstalling = true;
+            try
+            {
+                var progress = new Progress<string>(msg => AppendConsoleOutput(msg));
+                bool ok = await GameInstallService.UninstallGameAsync(preset, progress);
+                if (!ok)
+                {
+                    MessageBox.Show("Ошибка удаления правил портов", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
 
-            AppendConsoleOutput("📌 Удаление правил портов...");
-            var pm = new PortsManager(preset.Id);
-            var (removed, removeError) = await pm.RemoveAllRulesAsync();
-            if (removed)
-                AppendConsoleOutput("✅ Правила портов удалены");
-            else
-                AppendConsoleOutput($"❌ Ошибка удаления правил портов: {removeError}");
+                var freshPresets = UpdateService.LoadPresets();
+                _allPresets.Clear();
+                foreach (var p in freshPresets)
+                    _allPresets.Add(p);
+                FilterGames();
 
-            UpdateService.UninstallGame(preset.Id);
-            LauncherLogger.Info($"Конфиг {preset.Id} помечен как неустановленный");
+                _selectedGame = _allPresets.FirstOrDefault(p => p.Id == preset.Id);
+                if (_selectedGame != null)
+                    GamesListBox.SelectedItem = _selectedGame;
+                else
+                    _selectedGame = null;
 
-            var freshPresets = UpdateService.LoadPresets();
-            _allPresets.Clear();
-            foreach (var p in freshPresets)
-                _allPresets.Add(p);
-
-            FilterGames();
-
-            _selectedGame = _allPresets.FirstOrDefault(p => p.Id == preset.Id);
-            if (_selectedGame != null)
-                GamesListBox.SelectedItem = _selectedGame;
-            else
-                _selectedGame = null;
-
-            UpdateStartButtonText();
-            StatusBarText.Text = "Готово";
-            AppendConsoleOutput($"✅ Фикс {preset.Name} удалён (конфиг сохранён)");
-            LauncherLogger.Info($"Удаление {preset.Id} завершено");
-            MessageBox.Show($"Фикс {preset.Name} удалён", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
-
-            preset.IsUninstalling = false;
+                UpdateStartButtonText();
+                StatusBarText.Text = "Готово";
+                AppendConsoleOutput($"✅ Фикс {preset.Name} удалён");
+                MessageBox.Show($"Фикс {preset.Name} удалён", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                LauncherLogger.Error($"Ошибка удаления: {ex}");
+                AppendConsoleOutput($"❌ Ошибка: {ex.Message}");
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                preset.IsUninstalling = false;
+            }
         }
 
         private void PropertiesGame_Click(object sender, RoutedEventArgs e)
@@ -487,6 +425,30 @@ namespace PlatformLauncher
             }
         }
 
+        private DispatcherTimer _statusAnimationTimer;
+        private int _dotCount = 0;
+
+        private void StartStatusAnimation(string baseText)
+        {
+            _dotCount = 0;
+            _statusAnimationTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500)
+            };
+            _statusAnimationTimer.Tick += (s, e) =>
+            {
+                _dotCount = (_dotCount + 1) % 4;
+                StatusTextBlock.Text = baseText + new string('.', _dotCount);
+            };
+            _statusAnimationTimer.Start();
+        }
+
+        private void StopStatusAnimation()
+        {
+            _statusAnimationTimer?.Stop();
+            _statusAnimationTimer = null;
+        }
+
         private async void StartButton_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedGame == null) return;
@@ -503,8 +465,6 @@ namespace PlatformLauncher
                 return;
             }
 
-            bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
-
             if (string.IsNullOrEmpty(_listsPath))
             {
                 MessageBox.Show("Папка lists не найдена. Укажите путь через кнопку LISTS.",
@@ -512,47 +472,18 @@ namespace PlatformLauncher
                 return;
             }
 
-            _backupRestored = false;
-            _backupManager = new BackupManager("./backups", _selectedGame.Id);
-            try
-            {
-                _currentBackupDir = await _backupManager.CreateBackupAsync(_listsPath);
-                AppendConsoleOutput($"✅ Бэкап создан: {_currentBackupDir}");
-            }
-            catch (Exception ex)
-            {
-                AppendConsoleOutput($"❌ Ошибка создания бэкапа: {ex.Message}");
-                MessageBox.Show($"Не удалось создать бэкап: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            _warpStartedByUs = false;
-            if (warpEnabled)
-            {
-                AppendConsoleOutput("⏳ Запуск WARP...");
-                try
-                {
-                    bool warpStarted = await WarpManager.EnsureStartedAsync();
-                    if (warpStarted)
-                    {
-                        AppendConsoleOutput("✅ WARP запущен");
-                        _warpStartedByUs = true;
-                    }
-                    else
-                        AppendConsoleOutput("⚠️ Не удалось запустить WARP");
-                }
-                catch (Exception ex)
-                {
-                    AppendConsoleOutput($"❌ Ошибка запуска WARP: {ex.Message}");
-                }
-            }
+            bool warpEnabled = SettingsManager.GetWarpEnabled(_selectedGame.Id);
 
             ConsoleOutputTerminal.ConPTYTerm.ClearUITerminal(fullReset: false);
             LauncherLogger.Info($"Запуск мониторинга {_selectedGame.Name}...");
 
+            _gameSessionManager = new GameSessionManager(_selectedGame.Id, _listsPath);
+            _gameSessionManager.OutputReceived += AppendConsoleOutput;
+            _gameSessionManager.SessionEnded += OnSessionEnded;
+
             try
             {
-                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, monitorOnly: false);
+                await _gameSessionManager.StartAsync(monitorOnly: false, warpEnabled);
                 StartButton.IsEnabled = false;
                 MonitorButton.IsEnabled = false;
                 StopButton.IsEnabled = true;
@@ -569,6 +500,7 @@ namespace PlatformLauncher
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
+                _gameSessionManager = null;
             }
             catch (Exception ex)
             {
@@ -580,6 +512,7 @@ namespace PlatformLauncher
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
+                _gameSessionManager = null;
             }
         }
 
@@ -597,9 +530,13 @@ namespace PlatformLauncher
             ConsoleOutputTerminal.ConPTYTerm.ClearUITerminal(fullReset: false);
             AppendConsoleOutput($"Запуск мониторинга (только просмотр) {_selectedGame.Name}...");
 
+            _gameSessionManager = new GameSessionManager(_selectedGame.Id, _listsPath);
+            _gameSessionManager.OutputReceived += AppendConsoleOutput;
+            _gameSessionManager.SessionEnded += OnSessionEnded;
+
             try
             {
-                await _pythonManager.StartAsync(_selectedGame.Id, _listsPath, monitorOnly: true);
+                await _gameSessionManager.StartAsync(monitorOnly: true, warpEnabled: false);
                 StartButton.IsEnabled = false;
                 MonitorButton.IsEnabled = false;
                 StopButton.IsEnabled = true;
@@ -616,6 +553,7 @@ namespace PlatformLauncher
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
+                _gameSessionManager = null;
             }
             catch (Exception ex)
             {
@@ -627,103 +565,37 @@ namespace PlatformLauncher
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
                 StatusTextBlock.Text = "Ошибка";
+                _gameSessionManager = null;
             }
         }
 
         private async void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            await StopPythonProcessAsync();
-        }
+            if (_gameSessionManager == null || !_gameSessionManager.IsRunning)
+                return;
 
-        private async Task StopPythonProcessAsync()
-        {
-            if (!_pythonManager.IsRunning) return;
-            AppendConsoleOutput("Остановка процесса...");
-            await _pythonManager.StopAsync();
-
-            if (_warpStartedByUs)
-            {
-                AppendConsoleOutput("⏳ Остановка WARP...");
-                await WarpManager.DisconnectAsync();
-                AppendConsoleOutput("✅ WARP остановлен");
-                _warpStartedByUs = false;
-            }
-
-            StartButton.IsEnabled = IsAdministrator;
-            MonitorButton.IsEnabled = true;
+            // Отключаем кнопку, показываем статус
             StopButton.IsEnabled = false;
-            StatusTextBlock.Text = "Остановлен";
-            StatusBarText.Text = "Остановлен";
-            UpdateStartButtonText();
+            StartStatusAnimation("");
+            AppendConsoleOutput("Остановка фикса...");
 
-            // Принудительно сохраняем лог терминала
-            _terminalLogWriter?.Flush();
+            await _gameSessionManager.StopAsync();
+
+            // После остановки менеджер вызовет SessionEnded, который сбросит состояние
         }
 
-        private int _restoreInProgress = 0;
-
-        private void OnPythonProcessExited(int exitCode)
+        private void OnSessionEnded(bool success)
         {
-            Dispatcher.Invoke(async () =>
+            Dispatcher.Invoke(() =>
             {
                 StartButton.IsEnabled = IsAdministrator;
                 MonitorButton.IsEnabled = true;
                 StopButton.IsEnabled = false;
+                StopStatusAnimation();
                 StatusTextBlock.Text = "Завершён";
-                StatusBarText.Text = $"Процесс завершён с кодом {exitCode}";
-                LauncherLogger.Info($"Процесс завершён (код {exitCode})");
-
-                // Восстановление только один раз
-                if (Interlocked.CompareExchange(ref _restoreInProgress, 1, 0) == 0)
-                {
-                    try
-                    {
-                        if (!_backupRestored && _backupManager != null && !string.IsNullOrEmpty(_currentBackupDir))
-                        {
-                            try
-                            {
-                                bool restored = await _backupManager.RestoreBackupAsync(_listsPath, _currentBackupDir);
-                                Dispatcher.Invoke(() =>
-                                {
-                                    if (restored)
-                                    {
-                                        AppendConsoleOutput("✅ Бэкап восстановлен");
-                                        _backupRestored = true;
-                                    }
-                                    else
-                                        AppendConsoleOutput("⚠️ Ошибка восстановления бэкапа");
-                                    _currentBackupDir = null;
-                                    _backupManager = null;
-                                });
-                            }
-                            catch (Exception ex)
-                            {
-                                AppendConsoleOutput($"❌ Ошибка при восстановлении бэкапа: {ex.Message}");
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        Interlocked.Exchange(ref _restoreInProgress, 0);
-                    }
-                }
-
-                if (_warpStartedByUs)
-                {
-                    try
-                    {
-                        AppendConsoleOutput("⏳ Остановка WARP...");
-                        await WarpManager.DisconnectAsync();
-                        AppendConsoleOutput("✅ WARP остановлен");
-                        _warpStartedByUs = false;
-                    }
-                    catch (Exception ex)
-                    {
-                        AppendConsoleOutput($"❌ Ошибка остановки WARP: {ex.Message}");
-                    }
-                }
-
+                StatusBarText.Text = success ? "Завершено успешно" : "Завершено с ошибкой";
                 UpdateStartButtonText();
+                _gameSessionManager = null;
                 _terminalLogWriter?.Flush();
             });
         }
@@ -735,10 +607,7 @@ namespace PlatformLauncher
             {
                 if (!string.IsNullOrEmpty(line))
                 {
-                    // Пишем напрямую в UI-терминал (поддерживает ANSI)
                     ConsoleOutputTerminal.ConPTYTerm.WriteToUITerminal(line + Environment.NewLine);
-
-                    // Логируем в файл (опционально)
                     _terminalLogWriter?.WriteLine(line);
                     _terminalLogWriter?.Flush();
                 }
@@ -760,10 +629,6 @@ namespace PlatformLauncher
             var menuItem = sender as MenuItem;
             if (menuItem?.Tag is string command)
             {
-                // Выполняем команду через Python (если нужно) или просто выводим
-                // Здесь можно запускать команды в терминале, но так как интерактив не нужен,
-                // просто покажем результат выполнения в терминале.
-                // Для простоты выполним команду в отдельном процессе и выведем результат.
                 AppendConsoleOutput($"> {command}");
                 Task.Run(() =>
                 {
@@ -776,7 +641,7 @@ namespace PlatformLauncher
                         else if (cmd.StartsWith("pip "))
                             cmd = cmd.Replace("pip ", pythonExe + " -m pip ");
                         else
-                            cmd = pythonExe + " -m " + cmd; // fallback
+                            cmd = pythonExe + " -m " + cmd;
 
                         var psi = new ProcessStartInfo("cmd.exe", "/c " + cmd)
                         {

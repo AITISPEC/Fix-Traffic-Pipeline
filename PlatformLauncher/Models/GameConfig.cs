@@ -35,6 +35,9 @@ namespace PlatformLauncher.Models
         [YamlMember(Alias = "scan_interval")]
         public double ScanInterval { get; set; }
 
+        [YamlMember(Alias = "list_flush_interval")]
+        public double? ListFlushInterval { get; set; }
+
         [YamlMember(Alias = "logged_connections_max")]
         public int LoggedConnectionsMax { get; set; }
 

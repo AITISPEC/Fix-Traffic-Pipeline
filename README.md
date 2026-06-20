@@ -13,9 +13,10 @@
 
 - **Python-бэкенд** (`data/`) – выполняет **только мониторинг** сетевых соединений:
   - сканирует активные соединения целевых процессов;
-  - выполняет обратный DNS-резолвинг (для SYN-пакетов);
+  - выполняет обратный DNS-резолвинг (для статусов, указанных в `app_config.yaml`);
   - ведёт списки IP/доменов (используются внешним `winws.exe`);
-  - записывает обнаруженные адреса в текстовые файлы (с буферизацией и автоматической записью).
+  - записывает обнаруженные адреса в текстовые файлы (с буферизацией и автоматической записью);
+  - интервал сброса буфера (`list_flush_interval`) задаётся индивидуально в каждом игровом конфиге.
 - **C# WPF-лаунчер** (`PlatformLauncher/`) – графический интерфейс и вся административная логика:
   - отображает список доступных фиксов (пресетов);
   - скачивает и сохраняет конфигурации игр (YAML);
@@ -38,7 +39,72 @@ Python-скрипт `monitor.py` запускается лаунчером с н
 - проверит наличие Python 3.13+ и установит зависимости в виртуальное окружение `.venv`;
 - создаст пустой `presets.yaml`, если он отсутствует;
 - попытается найти папку `lists` (через процесс `winws.exe`);
-- загрузит список пресетов из `presets.yaml`.
+- загрузит список пресетов из `presets.yaml`;
+- применит настройки темы, шрифта и размера терминала из `app_config.yaml`.
+
+---
+
+### Конфигурация
+
+#### Общий конфиг (`data/app_config.yaml`)
+
+Содержит настройки, общие для Python и C#:
+
+```yaml
+# Общие настройки приложения
+app:
+  python_stop_timeout_ms: 2000   # таймаут остановки Python-процесса (мс)
+  default_lists_path: ""         # путь к папке lists (если пусто — определяется автоматически)
+
+# Настройки терминала (C# и Python)
+terminal:
+  theme: "Dark"                  # Dark / Light
+  font_family: "Cascadia Code"   # шрифт (только C#)
+  font_size: 12                  # размер шрифта (только C#)
+  max_proc_width: 24             # ширина колонки процесса (Python)
+  max_ip_width: 45               # ширина колонки IP (Python)
+  max_port_width: 6              # ширина колонки порта (Python)
+  max_domain_width: 50           # ширина колонки домена (Python)
+  color_console: true            # цветной вывод (Python)
+  skip_local_ips: true           # пропускать локальные IP (Python)
+  highlight_style: "BRIGHT_WHITE" # стиль подсветки (Python)
+
+# Настройки мониторинга (Python)
+monitor:
+  dns_resolve_statuses:          # статусы, для которых выполняется DNS-разрешение
+    - "SYN_SENT"
+    # - "SYN_RECV"
+    # - "ESTABLISHED"
+    # - "FIN_WAIT1"
+    # - "FIN_WAIT2"
+    # - "TIME_WAIT"
+    # - "CLOSE"
+    # - "CLOSE_WAIT"
+    # - "LAST_ACK"
+    # - "LISTEN"
+    # - "CLOSING"
+    # - "NONE"
+
+# Настройки логирования (C# и Python)
+logging:
+  level: "INFO"
+  max_file_size: 1048576         # 1 МБ
+  backup_count: 5
+```
+
+#### Игровые конфиги (`data/configs/<game_id>.yaml`)
+
+Содержат только специфичные для игры настройки:
+- `target_processes` – процессы для мониторинга.
+- `cloudflare_domains`, `include_domains`, `exclude_domains` – доменные списки.
+- `include_ips`, `exclude_ips` – IP-списки.
+- `ports` – порты TCP/UDP для брандмауэра.
+- `lists` – имена файлов списков.
+- `scan_interval`, `logged_connections_max`, `dns_timeout` – технические параметры.
+- `list_rules` – правила добавления в списки по статусам соединений.
+- `list_flush_interval` – интервал сброса буфера (по умолчанию 5.0 сек).
+
+Все общие настройки (цвет, отступы, DNS-статусы) вынесены в `app_config.yaml`.
 
 ---
 
@@ -55,7 +121,7 @@ Python-скрипт `monitor.py` запускается лаунчером с н
 #### Вкладка «Сервис»
 - **Запустить WARP** – устанавливает (при необходимости) и подключает Cloudflare WARP.
 - **Отключить WARP** – отключает WARP.
-- **Темы** – переключение светлой/тёмной темы терминала.
+- **Темы** – переключение светлой/тёмной темы терминала (применяется из `app_config.yaml`).
 
 #### Дополнительно
 - Кнопка **«Обновить пресеты»** – синхронизирует `presets.yaml` с удалённым репозиторием.
@@ -80,18 +146,23 @@ Fix-Traffic-Pipeline/
 │   │   ├── PythonEnvironmentManager.cs # Проверка/создание venv, установка зависимостей
 │   │   ├── UpdateService.cs        # Синхронизация пресетов, загрузка конфигов
 │   │   ├── SettingsManager.cs      # Настройки WARP (JSON)
-│   │   └── WinwsLocator.cs         # Поиск папки lists по процессу winws.exe
-│   ├── Models/                     # DTO для YAML-конфигов (GameConfig, GamePreset)
+│   │   ├── WinwsLocator.cs         # Поиск папки lists по процессу winws.exe
+│   │   ├── ConfigService.cs        # Загрузка app_config.yaml
+│   │   ├── GameSessionManager.cs   # Управление сессией мониторинга (бэкапы, WARP, процесс)
+│   │   └── GameInstallService.cs   # Установка/удаление игр
+│   ├── Models/                     # DTO для YAML-конфигов (GameConfig, GamePreset, AppConfig)
 │   └── Helpers/                    # Вспомогательные утилиты
 ├── data/                           # Python-бэкенд (только мониторинг)
 │   ├── monitor.py                  # Точка входа, обработка аргументов
 │   ├── requirements.txt            # Зависимости (psutil, colorama, watchdog, pyyaml)
+│   ├── app_config.yaml             # Общий конфиг (тема, шрифт, отступы, DNS-статусы)
 │   ├── configs/                    # YAML-конфигурации игр и presets.yaml
 │   │   ├── presets.yaml
 │   │   ├── apex.yaml
 │   │   ├── hunt.yaml
 │   │   └── roblox.yaml
 │   └── src/                        # Исходники Python
+│       ├── app_config.py           # Загрузчик app_config.yaml
 │       ├── config_loader.py
 │       ├── console_formatter.py
 │       ├── dns_resolver.py
@@ -137,7 +208,7 @@ python data/monitor.py --game apex --lists-path "C:\path\to\lists"
 
 ### Логирование
 
-- Лаунчер пишет логи в `logs/launcher.log` (ротация по дням, до 5 файлов по 1 МБ).
+- Лаунчер пишет логи в `logs/launcher_<дата>.log` (ротация по дням, до 5 файлов по 1 МБ).
 - Python-монитор пишет логи в `logs/<game_id>_monitor.log` (ротация до 10 файлов по 100 КБ).
 - Вывод терминала также сохраняется в `logs/console.log`.
 
@@ -149,4 +220,5 @@ python data/monitor.py --game apex --lists-path "C:\path\to\lists"
 - **WARP** – для работы требуется установленный `warp-cli`. Лаунчер автоматически скачивает и устанавливает WARP при первом запуске (через `WarpManager.InstallAsync()`).
 - **Папка lists** – должна существовать и быть доступна для чтения/записи. Обычно она находится рядом с `winws.exe`. Лаунчер пытается найти её автоматически, но пользователь может указать путь вручную.
 - **Синхронизация пресетов** – скачивает только `presets.yaml`. Локальный статус `installed` сохраняется.
-- **Терминал** – используется `EasyWindowsTerminalControl`, который поддерживает ANSI-цвета и полную эмуляцию консоли.
+- **Терминал** – используется `EasyWindowsTerminalControl`, который поддерживает ANSI-цвета и полную эмуляцию консоли. Тема, шрифт и размер настраиваются в `app_config.yaml`.
+- **Общие настройки** – вынесены в `app_config.yaml`, игровые конфиги содержат только специфичные параметры. Это упрощает добавление новых игр и централизованное изменение внешнего вида и поведения мониторинга.

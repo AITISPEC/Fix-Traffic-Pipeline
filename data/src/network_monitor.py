@@ -11,6 +11,7 @@ from .scanner import get_connections
 from .dns_resolver import DnsResolver
 from .console_formatter import format_connection, parse_style
 from .list_manager import ListManager
+from .app_config import get_app_config
 
 init(autoreset=True)
 logger = logging.getLogger(__name__)
@@ -22,31 +23,63 @@ class NetworkMonitor:
 		self.game_name = game_name
 		self.monitor_only = monitor_only
 
-		if monitor_only:
-			self.list_manager = ListManager(config, lists_path, readonly=True)
-		else:
-			self.list_manager = ListManager(config, lists_path)
+		# Загружаем общий конфиг
+		app_cfg = get_app_config()
+		term_cfg = app_cfg.get("terminal", {})
+		mon_cfg = app_cfg.get("monitor", {})
 
+		# Настройки форматирования
+		self.max_proc_width = term_cfg.get("max_proc_width", 24)
+		self.max_ip_width = term_cfg.get("max_ip_width", 45)
+		self.max_port_width = term_cfg.get("max_port_width", 6)
+		self.max_domain_width = term_cfg.get("max_domain_width", 50)
+		self.color_enabled = term_cfg.get("color_console", True)
+		self.skip_local_ips = term_cfg.get("skip_local_ips", True)
+		self.highlight_style = term_cfg.get("highlight_style", "BRIGHT_WHITE")
+		self.dns_resolve_statuses = mon_cfg.get("dns_resolve_statuses", ["SYN_SENT"])
+
+		# Парсим стиль подсветки
+		self.highlight_attr, self.highlight_color = parse_style(self.highlight_style)
+
+		# Инициализация list_manager с flush_interval из игрового конфига
+		flush_interval = config.get("list_flush_interval", 5.0)
+		if monitor_only:
+			self.list_manager = ListManager(
+				config, lists_path, readonly=True, flush_interval=flush_interval
+			)
+		else:
+			self.list_manager = ListManager(
+				config, lists_path, flush_interval=flush_interval
+			)
+
+		# DNS-резолвер
 		self.dns = DnsResolver(config.get("dns_timeout", 2.0))
+
+		# Флаг остановки
 		self.stop_requested = False
 
+		# Блокировки и счётчики
 		self.print_lock = threading.Lock()
 		self.ip_counter = OrderedDict()
 		self.logged_connections = OrderedDict()
 		self.lock = threading.Lock()
 
+		# Имена процессов для подсветки
 		self.highlight_proc_names = [p["name"] for p in config["target_processes"]]
-		self.highlight_attr, self.highlight_color = parse_style(
-			config.get("highlight_style", "BRIGHT_WHITE")
-		)
-		self.color_enabled = config.get("color_console", True)
-		self.console_cfg = config.get("console", {})
 
+		# Настройки консоли для форматтера
+		self.console_cfg = {
+			"max_proc_width": self.max_proc_width,
+			"max_ip_width": self.max_ip_width,
+			"max_port_width": self.max_port_width,
+			"max_domain_width": self.max_domain_width,
+		}
+
+		# Пул потоков
 		self.executor = BoundedThreadPool(max_workers=64, max_queue_size=256)
 
-		# ИЗМЕНЕНИЕ: чтение правил для списков из конфига
+		# Правила для списков из конфига
 		self.list_rules = config.get("list_rules", {})
-		# Для обратной совместимости, если правил нет, используем старую логику
 		if not self.list_rules:
 			self.list_rules = {
 				"SYN_SENT": {"action": "add_to_main", "target": "both"},
@@ -60,7 +93,7 @@ class NetworkMonitor:
 		status = conn["status"]
 		is_target = conn.get("is_target", False)
 
-		need_dns = status in self.config.get("dns_resolve_statuses", ["SYN_SENT"])
+		need_dns = status in self.dns_resolve_statuses
 		domain = self.dns.resolve(remote_ip) if need_dns else "—"
 
 		exclude_domains = self.config.get("exclude_domains", [])
@@ -69,7 +102,7 @@ class NetworkMonitor:
 		):
 			return
 
-		# ИЗМЕНЕНИЕ: применение правил из конфига
+		# Применяем правила из конфига
 		rule = self.list_rules.get(status, {})
 		action = rule.get("action", "ignore")
 		target = rule.get("target", "none")
@@ -85,9 +118,8 @@ class NetworkMonitor:
 					self.list_manager.add_to_exclude_lists(remote_ip, None, proc_name)
 				if target in ("domain_only", "both") and domain != "—":
 					self.list_manager.add_to_exclude_lists(None, domain, proc_name)
-			# action == "ignore" – ничего не делаем
 
-		# Подсветка: если is_target или proc_name в highlight_proc_names
+		# Подсветка
 		should_highlight = is_target or proc_name.lower() in [
 			p.lower() for p in self.highlight_proc_names
 		]
@@ -99,7 +131,7 @@ class NetworkMonitor:
 			domain,
 			status,
 			count,
-			should_highlight,  # вместо списка highlight_proc_names
+			should_highlight,
 			self.highlight_attr,
 			self.highlight_color,
 			self.color_enabled,
@@ -119,7 +151,7 @@ class NetworkMonitor:
 			+ Style.RESET_ALL
 		)
 
-		print("-" * 64)
+		print("-" * 75)
 
 		last_clean = time.time()
 		try:
@@ -127,8 +159,8 @@ class NetworkMonitor:
 				conns = get_connections(
 					self.config["target_processes"],
 					self.game_name,
-					self.config.get("skip_local_ips", True),
-					filter_by_target=not self.monitor_only,  # в monitor-only показываем все
+					self.skip_local_ips,
+					filter_by_target=not self.monitor_only,
 				)
 				now = time.time()
 				for conn in conns:
@@ -137,7 +169,7 @@ class NetworkMonitor:
 						if key in self.logged_connections:
 							continue
 						if len(self.logged_connections) > self.config.get(
-							"max_logged_connections", 5000
+							"logged_connections_max", 5000
 						):
 							self.logged_connections.popitem(last=False)
 						self.logged_connections[key] = now
@@ -176,7 +208,7 @@ class NetworkMonitor:
 		finally:
 			if not self.monitor_only:
 				self.list_manager.flush_buffers()
-				self.list_manager.shutdown()  # ИЗМЕНЕНИЕ: остановка таймера
+				self.list_manager.shutdown()
 			self.dns.shutdown()
 			self.executor.shutdown(wait=True)
 			logger.info("Мониторинг остановлен.")

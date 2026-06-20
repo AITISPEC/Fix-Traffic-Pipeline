@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -14,7 +15,6 @@ namespace PlatformLauncher.Services
 
         public bool IsRunning => _process != null && !_process.HasExited;
 
-        // --- ИЗМЕНЁННЫЙ МЕТОД (убраны warpEnabled, backupRoot, noPorts) ---
         public async Task StartAsync(string gameId, string listsPath, bool monitorOnly = false)
         {
             string pythonExe = PythonEnvironmentManager.GetVenvPythonPath();
@@ -51,12 +51,36 @@ namespace PlatformLauncher.Services
             {
                 foreach (var oldProcess in Process.GetProcessesByName("python"))
                 {
-                    // Проверяем, что это именно наш процесс, а не системный (опционально)
-                    if (oldProcess.MainModule?.FileName.Contains("venv") == true)
+                    try
                     {
-                        oldProcess.Kill(entireProcessTree: true);
+                        // Проверяем, что процесс ещё не завершён
+                        if (oldProcess.HasExited)
+                        {
+                            oldProcess.Dispose();
+                            continue;
+                        }
+
+                        // Пытаемся получить путь к исполняемому файлу
+                        string fileName = oldProcess.MainModule?.FileName;
+                        if (!string.IsNullOrEmpty(fileName) && fileName.Contains("venv", StringComparison.OrdinalIgnoreCase))
+                        {
+                            oldProcess.Kill(entireProcessTree: true);
+                            await Task.Delay(100); // даём время завершиться
+                        }
+                    }
+                    catch (Exception ex) when (ex is Win32Exception || ex is InvalidOperationException)
+                    {
+                        // Игнорируем ошибки доступа к процессам
+                        // Win32Exception (299) – частичное выполнение ReadProcessMemory
+                        // InvalidOperationException – процесс уже завершился
+                        continue;
+                    }
+                    finally
+                    {
+                        oldProcess?.Dispose();
                     }
                 }
+
                 _process.Start();
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
@@ -68,20 +92,19 @@ namespace PlatformLauncher.Services
             }
         }
 
-        // Остановка процесса (без изменений)
-        public async Task StopAsync(int timeoutMs = 10000)
+        public async Task StopAsync(int timeoutMs = 2000)
         {
             if (_process == null || _process.HasExited) return;
 
             try
             {
-                _process.StandardInput.WriteLine("exit");
-                _process.StandardInput.Flush();
+                // Отправляем exit на случай, если процесс читает stdin (но у нас не читает)
+                try { _process.StandardInput.WriteLine("exit"); } catch { }
 
                 var exitTask = _process.WaitForExitAsync();
                 if (await Task.WhenAny(exitTask, Task.Delay(timeoutMs)) != exitTask)
                 {
-                    _process.Kill();
+                    _process.Kill(entireProcessTree: true);
                     await _process.WaitForExitAsync();
                 }
             }

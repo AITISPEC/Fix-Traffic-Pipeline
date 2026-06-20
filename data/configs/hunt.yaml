@@ -96,15 +96,9 @@ lists:
   session_ip_file: "fix.txt"
 
 scan_interval: 0.1
-logged_connections_max: 5000
+logged_connections_max: 500
 dns_timeout: 2.0
-
-dns_resolve_statuses:
-  - "SYN_SENT"
-
-color_console: true
-skip_local_ips: true
-highlight_style: "BRIGHT_WHITE"
+list_flush_interval: 2.0
 
 list_rules:
   SYN_SENT:
