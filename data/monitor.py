@@ -5,8 +5,6 @@ import argparse
 import os
 import signal
 import atexit
-import colorama
-from colorama import Fore, Style
 
 # Принудительно UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -19,14 +17,29 @@ from src.network_monitor import NetworkMonitor
 from src.logger_setup import setup_game_logger
 
 
-def run_monitor(game_id, lists_path, monitor_only=False):
+def signal_handler(sig, frame):
+	print("Received stop signal, exiting gracefully...")
+	sys.exit(0)
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+
+def run_monitor(game_id, lists_path, monitor_only=False, filter_processes=True):
 	config = load_game_config(game_id)
 	logger = setup_game_logger(game_id)
 
 	logger.info("Запуск мониторинга (управление портами и WARP — в GUI)")
 
 	try:
-		monitor = NetworkMonitor(config, lists_path, game_id, monitor_only=monitor_only)
+		monitor = NetworkMonitor(
+			config,
+			lists_path,
+			game_id,
+			monitor_only=monitor_only,
+			filter_by_target=filter_processes,
+		)
 		monitor.run()
 	except Exception as e:
 		import traceback
@@ -41,7 +54,6 @@ def run_monitor(game_id, lists_path, monitor_only=False):
 def main():
 	parser = argparse.ArgumentParser(description="Game Fix Platform Core (мониторинг)")
 
-	# Аргументы для мониторинга
 	parser.add_argument("--game", required=True, help="ID игры")
 	parser.add_argument("--lists-path", required=True, help="Путь к папке lists")
 	parser.add_argument(
@@ -49,11 +61,17 @@ def main():
 		action="store_true",
 		help="Только мониторинг (без записи в списки)",
 	)
+	parser.add_argument(
+		"--no-filter-processes",
+		action="store_true",
+		help="Отключить фильтрацию по target_processes (показывать все соединения)",
+	)
 
 	args = parser.parse_args()
 
 	if args.game and args.lists_path:
-		run_monitor(args.game, args.lists_path, args.monitor_only)
+		filter_processes = not args.no_filter_processes
+		run_monitor(args.game, args.lists_path, args.monitor_only, filter_processes)
 	else:
 		parser.print_help()
 		sys.exit(1)

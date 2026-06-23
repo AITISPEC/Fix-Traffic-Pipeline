@@ -99,14 +99,6 @@ ports:
   tcp: [80, 443, "3478-3480"]
   udp: ["3478-3480", "49152-65535"]
 
-lists:
-  ip_file: "ipset-all.txt"
-  domain_file: "list-general-user.txt"
-  general_domain_file: "list-general.txt"
-  exclude_ip_file: "ipset-exclude-user.txt"
-  exclude_domain_file: "list-exclude-user.txt"
-  session_ip_file: "fix.txt"
-
 scan_interval: 0.02
 logged_connections_max: 500
 dns_timeout: 2.0

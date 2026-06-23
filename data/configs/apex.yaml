@@ -99,14 +99,6 @@ ports:
   tcp: [80,443,9988,17502,"20000-20100",22990,42127,"27015-27030","27036-27037","1024-1124",3216,"9960-9969",18000,18060,18120,27900,28910,29900]
   udp: [3659,"37000-40000","14000-14016","22990-23006","25200-25300","27015-27030","27031-27036",4380,"3478-3479",5060,5062,"50000-50016"]
 
-lists:
-  ip_file: "ipset-all.txt"
-  domain_file: "list-general-user.txt"
-  general_domain_file: "list-general.txt"
-  exclude_ip_file: "ipset-exclude-user.txt"
-  exclude_domain_file: "list-exclude-user.txt"
-  session_ip_file: "fix.txt"
-
 scan_interval: 0.1
 logged_connections_max: 500
 dns_timeout: 2.0

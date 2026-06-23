@@ -2,9 +2,9 @@ import time
 import signal
 import threading
 import logging
+import sys
 from collections import OrderedDict
 import fnmatch
-from colorama import Fore, Style, init
 
 from .thread_pool import BoundedThreadPool
 from .scanner import get_connections
@@ -12,23 +12,50 @@ from .dns_resolver import DnsResolver
 from .console_formatter import format_connection, parse_style
 from .list_manager import ListManager
 from .app_config import get_app_config
+from .config_loader import load_game_config  # <-- ДОБАВЛЕН ИМПОРТ
 
-init(autoreset=True)
 logger = logging.getLogger(__name__)
 
 
 class NetworkMonitor:
-	def __init__(self, config, lists_path, game_name, monitor_only=False):
-		self.config = config
+	def __init__(
+		self, config, lists_path, game_name, monitor_only=False, filter_by_target=True
+	):
+		app_cfg = get_app_config()
+		list_files = app_cfg.get("lists", {})
+		term_cfg = app_cfg.get("terminal", {})
+
+		# Загружаем пресет Monitor (monitor.yaml)
+		monitor_config = load_game_config("monitor")
+
+		# Формируем эффективный конфиг
+		if game_name == "Monitor":
+			# Для мониторинга пресета Monitor используем только его конфиг
+			effective_config = monitor_config.copy()
+		else:
+			# Для фикса или мониторинга игры:
+			# берём target_processes, list_rules и технические параметры из игрового,
+			# всё остальное – из Monitor
+			effective_config = monitor_config.copy()
+			effective_config["target_processes"] = config.get("target_processes", [])
+			effective_config["list_rules"] = config.get("list_rules", {})
+
+			# Технические параметры с приоритетом игровых
+			for key in [
+				"scan_interval",
+				"logged_connections_max",
+				"dns_timeout",
+				"list_flush_interval",
+			]:
+				if key in config:
+					effective_config[key] = config[key]
+
+		self.config = effective_config
 		self.game_name = game_name
 		self.monitor_only = monitor_only
 
-		# Загружаем общий конфиг
-		app_cfg = get_app_config()
-		term_cfg = app_cfg.get("terminal", {})
-		mon_cfg = app_cfg.get("monitor", {})
-
-		# Настройки форматирования
+		# Настройки терминала (из app_config)
+		self.theme = term_cfg.get("theme", "Dark")
 		self.max_proc_width = term_cfg.get("max_proc_width", 24)
 		self.max_ip_width = term_cfg.get("max_ip_width", 45)
 		self.max_port_width = term_cfg.get("max_port_width", 6)
@@ -36,38 +63,43 @@ class NetworkMonitor:
 		self.color_enabled = term_cfg.get("color_console", True)
 		self.skip_local_ips = term_cfg.get("skip_local_ips", True)
 		self.highlight_style = term_cfg.get("highlight_style", "BRIGHT_WHITE")
-		self.dns_resolve_statuses = mon_cfg.get("dns_resolve_statuses", ["SYN_SENT"])
 
-		# Парсим стиль подсветки
+		# DNS-резолвинг – из эффективного конфига (т.е. из Monitor)
+		self.dns_resolve_statuses = self.config.get(
+			"dns_resolve_statuses", ["SYN_SENT"]
+		)
+
+		# Для Monitor отключаем пропуск локальных IP
+		if game_name == "Monitor":
+			self.skip_local_ips = False
+
 		self.highlight_attr, self.highlight_color = parse_style(self.highlight_style)
 
-		# Инициализация list_manager с flush_interval из игрового конфига
-		flush_interval = config.get("list_flush_interval", 5.0)
+		# Инициализация менеджера списков (списки из app_config)
+		flush_interval = self.config.get("list_flush_interval", 5.0)
 		if monitor_only:
 			self.list_manager = ListManager(
-				config, lists_path, readonly=True, flush_interval=flush_interval
+				list_files, lists_path, readonly=True, flush_interval=flush_interval
 			)
 		else:
 			self.list_manager = ListManager(
-				config, lists_path, flush_interval=flush_interval
+				list_files, lists_path, flush_interval=flush_interval
 			)
 
-		# DNS-резолвер
-		self.dns = DnsResolver(config.get("dns_timeout", 2.0))
-
-		# Флаг остановки
+		# DNS-резолвер с таймаутом из effective_config
+		self.dns = DnsResolver(self.config.get("dns_timeout", 2.0))
 		self.stop_requested = False
 
-		# Блокировки и счётчики
 		self.print_lock = threading.Lock()
 		self.ip_counter = OrderedDict()
 		self.logged_connections = OrderedDict()
 		self.lock = threading.Lock()
 
-		# Имена процессов для подсветки
-		self.highlight_proc_names = [p["name"] for p in config["target_processes"]]
+		# Подсветка процессов – из effective_config (target_processes)
+		self.highlight_proc_names = [
+			p["name"] for p in self.config.get("target_processes", [])
+		]
 
-		# Настройки консоли для форматтера
 		self.console_cfg = {
 			"max_proc_width": self.max_proc_width,
 			"max_ip_width": self.max_ip_width,
@@ -75,11 +107,10 @@ class NetworkMonitor:
 			"max_domain_width": self.max_domain_width,
 		}
 
-		# Пул потоков
-		self.executor = BoundedThreadPool(max_workers=64, max_queue_size=256)
+		self.executor = BoundedThreadPool(max_workers=64, max_queue_size=128)
 
-		# Правила для списков из конфига
-		self.list_rules = config.get("list_rules", {})
+		# Правила для списков – из effective_config
+		self.list_rules = self.config.get("list_rules", {})
 		if not self.list_rules:
 			self.list_rules = {
 				"SYN_SENT": {"action": "add_to_main", "target": "both"},
@@ -93,21 +124,29 @@ class NetworkMonitor:
 		status = conn["status"]
 		is_target = conn.get("is_target", False)
 
+		# ----- ВОССТАНОВЛЕННЫЕ ФИЛЬТРЫ (из effective_config) -----
+		output_statuses = self.config.get("console_output_statuses", [])
+		ignore_statuses = self.config.get("console_ignore_statuses", [])
+		if output_statuses and status not in output_statuses:
+			return
+		if status in ignore_statuses:
+			return
+
 		need_dns = status in self.dns_resolve_statuses
 		domain = self.dns.resolve(remote_ip) if need_dns else "—"
 
+		# Исключение доменов (из effective_config)
 		exclude_domains = self.config.get("exclude_domains", [])
 		if domain != "—" and any(
 			fnmatch.fnmatch(domain.lower(), pat.lower()) for pat in exclude_domains
 		):
 			return
 
-		# Применяем правила из конфига
 		rule = self.list_rules.get(status, {})
 		action = rule.get("action", "ignore")
 		target = rule.get("target", "none")
 
-		if not self.monitor_only:
+		if not self.monitor_only and is_target:  # записываем только целевые соединения
 			if action == "add_to_main":
 				if target in ("ip_only", "both"):
 					self.list_manager.add_to_lists_files(remote_ip, None, proc_name)
@@ -119,7 +158,6 @@ class NetworkMonitor:
 				if target in ("domain_only", "both") and domain != "—":
 					self.list_manager.add_to_exclude_lists(None, domain, proc_name)
 
-		# Подсветка
 		should_highlight = is_target or proc_name.lower() in [
 			p.lower() for p in self.highlight_proc_names
 		]
@@ -136,22 +174,22 @@ class NetworkMonitor:
 			self.highlight_color,
 			self.color_enabled,
 			self.console_cfg,
+			self.theme,
 		)
 
 		with self.print_lock:
 			print(formatted)
+			sys.stdout.flush()
 
 	def run(self):
 		signal.signal(signal.SIGINT, self._stop)
 		signal.signal(signal.SIGTERM, self._stop)
 
 		print(
-			Fore.CYAN
-			+ f"\n=== {self.game_name} {'MONITOR' if self.monitor_only else 'FIX'} запущен ===\n"
-			+ Style.RESET_ALL
+			f"\033[36m\n=== {self.game_name} {'MONITOR' if self.monitor_only else 'FIX'} запущен ===\n\033[0m"
 		)
-
 		print("-" * 75)
+		sys.stdout.flush()
 
 		last_clean = time.time()
 		try:
@@ -160,8 +198,9 @@ class NetworkMonitor:
 					self.config["target_processes"],
 					self.game_name,
 					self.skip_local_ips,
-					filter_by_target=not self.monitor_only,
+					filter_by_target=bool(self.config.get("target_processes")),
 				)
+
 				now = time.time()
 				for conn in conns:
 					key = (conn["pid"], conn["raddr_ip"], conn["raddr_port"])
@@ -212,8 +251,10 @@ class NetworkMonitor:
 			self.dns.shutdown()
 			self.executor.shutdown(wait=True)
 			logger.info("Мониторинг остановлен.")
-			print(Fore.GREEN + "Мониторинг остановлен." + Style.RESET_ALL)
+			print("\033[32mМониторинг остановлен.\033[0m")
+			sys.stdout.flush()
 
 	def _stop(self, signum=None, frame=None):
 		print("\n" + "-" * 50)
 		self.stop_requested = True
+		sys.stdout.flush()

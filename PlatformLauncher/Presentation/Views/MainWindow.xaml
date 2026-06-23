@@ -1,0 +1,201 @@
+﻿<Window x:Class="PlatformLauncher.Presentation.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:PlatformLauncher.Presentation.Views"
+        xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
+        xmlns:tb="http://www.hardcodet.net/taskbar"
+        xmlns:controls="clr-namespace:System.Windows.Controls;assembly=PresentationFramework"
+        Title="Fix Traffic Pipeline" Height="600" Width="918"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        WindowStyle="SingleBorderWindow"
+        Background="{DynamicResource MainBackground}"
+        Foreground="{DynamicResource MainForeground}">
+
+    <Window.Resources>
+        <controls:BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Window.Resources>
+
+    <Grid Margin="10" Background="{DynamicResource ControlBackground}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Верхняя панель: кнопки и чекбоксы -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Обновить пресеты" Width="120" Margin="0,0,10,0"
+                    Command="{Binding RefreshPresetsCommand}" FontSize="11"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="{DynamicResource ControlForeground}"
+                    BorderBrush="{DynamicResource BorderBrush}"/>
+            <Button Content="LISTS" Width="80" Margin="0,0,10,0" Click="OpenListsButton_Click"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="{DynamicResource ControlForeground}"
+                    BorderBrush="{DynamicResource BorderBrush}">
+                <Button.ContextMenu>
+                    <ContextMenu x:Name="ListsContextMenu"
+                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="Выбрать расположение" Command="{Binding SelectListsPathCommand}"/>
+                        <MenuItem Header="Открыть папку" Command="{Binding OpenListsFolderCommand}"/>
+                    </ContextMenu>
+                </Button.ContextMenu>
+            </Button>
+            <CheckBox Content="Только установленные" Margin="10,0,0,0" VerticalAlignment="Center"
+                      IsChecked="{Binding ShowOnlyInstalled, Mode=TwoWay}"
+                      Command="{Binding FilterCommand}"
+                      Foreground="{DynamicResource MainForeground}"/>
+            <CheckBox Content="Только локальные" Margin="10,0,0,0" VerticalAlignment="Center"
+                      IsChecked="{Binding ShowOnlyLocal, Mode=TwoWay}"
+                      Command="{Binding FilterCommand}"
+                      Foreground="{DynamicResource MainForeground}"/>
+        </StackPanel>
+
+        <!-- TabControl с именем для переключения -->
+        <TabControl x:Name="MainTabControl" Grid.Row="1"
+                    Background="{DynamicResource ControlBackground}"
+                    Foreground="{DynamicResource MainForeground}"
+                    BorderBrush="{DynamicResource BorderBrush}">
+            <!-- Вкладка "Фиксы" -->
+            <TabItem Header="Фиксы">
+                <Grid Background="{DynamicResource ControlBackground}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="250"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Список игр -->
+                    <ListBox ItemsSource="{Binding Games}"
+                             SelectedItem="{Binding SelectedGame}"
+                             Background="{DynamicResource ControlBackground}"
+                             Foreground="{DynamicResource MainForeground}"
+                             BorderBrush="{DynamicResource BorderBrush}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource MainForeground}"/>
+                                    <ProgressBar Width="16" Height="16" Margin="10,0,0,0"
+                                                 IsIndeterminate="True"
+                                                 Visibility="{Binding IsInstalling, Converter={StaticResource BoolToVisibility}}"
+                                                 VerticalAlignment="Center"/>
+                                    <ProgressBar Width="16" Height="16" Margin="10,0,0,0"
+                                                 IsIndeterminate="True"
+                                                 Visibility="{Binding IsUninstalling, Converter={StaticResource BoolToVisibility}}"
+                                                 VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                        <ListBox.ContextMenu>
+                            <ContextMenu Background="{DynamicResource ControlBackground}"
+                                         Foreground="{DynamicResource MainForeground}"
+                                         BorderBrush="{DynamicResource BorderBrush}">
+                                <MenuItem Header="Установить" Command="{Binding InstallCommand}" CommandParameter="{Binding SelectedGame}"/>
+                                <MenuItem Header="Удалить" Command="{Binding UninstallCommand}" CommandParameter="{Binding SelectedGame}"/>
+                                <MenuItem Header="Свойства" Command="{Binding PropertiesCommand}" CommandParameter="{Binding SelectedGame}"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                    </ListBox>
+
+                    <!-- Правая часть: терминал + кнопки управления -->
+                    <Grid Grid.Column="1" Margin="10,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Терминал (фон управляется отдельно через тему терминала) -->
+                        <term:EasyTerminalControl x:Name="ConsoleOutputTerminal"
+                                                  FontSizeWhenSettingTheme="10"
+                                                  Grid.Row="1"
+                                                  Background="Black"
+                                                  StartupCommandLine="cmd.exe /c"
+                                                  LogConPTYOutput="True"
+                                                  Win32InputMode="True"
+                                                  InputCapture="TabKey,DirectionKeys"
+                                                  Margin="0,0,0,25"
+                                                  Grid.RowSpan="2"
+                                                  PreviewKeyDown="ConsoleOutputTerminal_PreviewKeyDown">
+                        </term:EasyTerminalControl>
+
+                        <!-- Нижняя панель: кнопки управления монитором и кнопка "Ввод" -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="{Binding StartButtonText}" Width="120" Margin="0,0,10,0"
+                                    Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Foreground="{DynamicResource ControlForeground}"
+                                    BorderBrush="{DynamicResource BorderBrush}"/>
+                            <Button Content="Мониторинг" Width="100" Margin="0,0,10,0"
+                                    Command="{Binding MonitorCommand}" IsEnabled="{Binding CanMonitor}"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Foreground="{DynamicResource ControlForeground}"
+                                    BorderBrush="{DynamicResource BorderBrush}"/>
+                            <Button Content="Остановить" Width="80"
+                                    Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Foreground="{DynamicResource ControlForeground}"
+                                    BorderBrush="{DynamicResource BorderBrush}"/>
+                            <TextBlock Text="{Binding StatusText}" Margin="20,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource MainForeground}"/>
+
+                            <!-- Кнопка "Команды" справа -->
+                            <Button Content="Команды" Width="60" Margin="148,0,0,0" FontSize="11"
+                                    VerticalAlignment="Center" HorizontalAlignment="Right" Click="InputButton_Click"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Foreground="{DynamicResource ControlForeground}"
+                                    BorderBrush="{DynamicResource BorderBrush}">
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="InputContextMenu"
+                                                 DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                                 Background="{DynamicResource ControlBackground}"
+                                                 Foreground="{DynamicResource MainForeground}"
+                                                 BorderBrush="{DynamicResource BorderBrush}">
+                                        <MenuItem Header="Версия Python" Command="{Binding RunCommandCommand}" CommandParameter="python -V"/>
+                                        <MenuItem Header="Версия PIP" Command="{Binding RunCommandCommand}" CommandParameter="pip -V"/>
+                                        <MenuItem Header="Обновить PIP" Command="{Binding RunCommandCommand}" CommandParameter="python -m pip install --upgrade pip"/>
+                                        <MenuItem Header="Список пакетов" Command="{Binding RunCommandCommand}" CommandParameter="pip list"/>
+                                        <MenuItem Header="Обновить пакеты" Command="{Binding RunCommandCommand}" CommandParameter="pip list --outdated --format=freeze | foreach { pip install --upgrade $_.Split('==')[0] }"/>
+                                        <Separator/>
+                                        <MenuItem Header="Очистить" Command="{Binding ClearConsoleCommand}"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- Вкладка "Сервис" -->
+            <TabItem Header="Сервис">
+                <views:ServiceTab x:Name="ServiceTabControl" />
+            </TabItem>
+        </TabControl>
+
+        <!-- Строка статуса -->
+        <StatusBar Grid.Row="2" Margin="0,10,0,0"
+                   Background="{DynamicResource ControlBackground}"
+                   Foreground="{DynamicResource MainForeground}"
+                   BorderBrush="{DynamicResource BorderBrush}">
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusBarText}"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- Трей-иконка -->
+        <tb:TaskbarIcon x:Name="TrayIcon"
+                        ToolTipText="Fix Traffic Pipeline"
+                        DoubleClickCommand="{Binding ShowWindowCommand}">
+            <tb:TaskbarIcon.ContextMenu>
+                <ContextMenu Background="{DynamicResource ControlBackground}"
+                             Foreground="{DynamicResource MainForeground}"
+                             BorderBrush="{DynamicResource BorderBrush}">
+                    <MenuItem Header="Показать" Command="{Binding ShowWindowCommand}" />
+                    <MenuItem Header="Закрыть" Click="ExitMenuItem_Click" />
+                </ContextMenu>
+            </tb:TaskbarIcon.ContextMenu>
+        </tb:TaskbarIcon>
+    </Grid>
+</Window>

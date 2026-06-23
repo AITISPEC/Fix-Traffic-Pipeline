@@ -7,12 +7,19 @@
 		<UseWindowsForms>false</UseWindowsForms>
 		<LangVersion>latest</LangVersion>
 		<Platforms>AnyCPU;x64</Platforms>
+		<ApplicationIcon>icon.ico</ApplicationIcon>
 	</PropertyGroup>
+
+	<ItemGroup>
+	  <Content Include="icon.ico" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="CI.Microsoft.Terminal.Wpf" Version="1.22.250204002" />
 		<PackageReference Include="CI.Microsoft.Windows.Console.ConPTY" Version="1.22.250314001" />
 		<PackageReference Include="EasyWindowsTerminalControl" Version="1.0.36" />
+		<PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
 		<PackageReference Include="YamlDotNet" Version="18.0.0" />
 	</ItemGroup>
 
@@ -20,28 +27,41 @@
 	  <None Update="copy_files.bat">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </None>
+	  <None Update="trayicon.ico">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+	  <None Update="icon.png">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Core\DTOs\" />
+	  <Folder Include="Core\Validators\" />
+	  <Folder Include="Domain\Enums\" />
+	  <Folder Include="Domain\Exceptions\" />
+	  <Folder Include="Presentation\Converters\" />
 	</ItemGroup>
 
 	<Target Name="MoveLibrariesToLibs" AfterTargets="Build">
 		<Message Text="Перемещение библиотек в libs..." Importance="High" />
-
 		<MakeDir Directories="$(TargetDir)libs" Condition="!Exists('$(TargetDir)libs')" />
 
-		<!-- Копируем нативные DLL (64-битные) из папки runtimes (если есть) -->
+		<!-- Копируем нативные DLL из runtimes (если есть) -->
 		<ItemGroup>
 			<_NativeDlls Include="$(TargetDir)runtimes\win-x64\native\*.dll" />
 			<_NativeDlls Include="$(TargetDir)runtimes\win10-x64\native\*.dll" />
 		</ItemGroup>
-		<Copy SourceFiles="@(_NativeDlls)" DestinationFolder="$(TargetDir)libs" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)runtimes')" />
-
-		<!-- Удаляем папку runtimes -->
+		<Copy SourceFiles="@(_NativeDlls)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)runtimes')" />
 		<RemoveDir Directories="$(TargetDir)runtimes" Condition="Exists('$(TargetDir)runtimes')" />
 
-		<!-- Перемещаем управляемые DLL (исключая нативные и сам EXE) -->
+		<!-- Перемещаем все DLL, кроме PlatformLauncher.dll и conpty.dll -->
 		<ItemGroup>
-			<_ManagedDlls Include="$(TargetDir)*.dll" Exclude="$(TargetDir)$(TargetName).dll;$(TargetDir)Microsoft.Terminal.Control.dll;$(TargetDir)conpty.dll" />
+			<FilteredDlls Include="$(TargetDir)*.dll" Exclude="$(TargetDir)PlatformLauncher.dll;&#xD;&#xA;								   $(TargetDir)conpty.dll;&#xD;&#xA;								   $(TargetDir)Microsoft.Terminal.Control.dll" />
 		</ItemGroup>
-		<Move SourceFiles="@(_ManagedDlls)" DestinationFolder="$(TargetDir)libs" OverwriteReadOnlyFiles="true" />
+
+		<Move SourceFiles="@(FilteredDlls)" DestinationFolder="$(TargetDir)libs" OverwriteReadOnlyFiles="true" Condition="'@(FilteredDlls)' != ''" />
 	</Target>
+
 
 </Project>

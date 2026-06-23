@@ -1,29 +1,88 @@
-from colorama import Fore, Style
+# Эмуляция colorama через ANSI-коды
+class Fore:
+	BLACK = "\033[30m"
+	RED = "\033[31m"
+	GREEN = "\033[32m"
+	YELLOW = "\033[33m"
+	BLUE = "\033[34m"
+	MAGENTA = "\033[35m"
+	CYAN = "\033[36m"
+	WHITE = "\033[37m"
+	LIGHTBLACK_EX = "\033[90m"
+	LIGHTRED_EX = "\033[91m"
+	LIGHTGREEN_EX = "\033[92m"
+	LIGHTYELLOW_EX = "\033[93m"
+	LIGHTBLUE_EX = "\033[94m"
+	LIGHTMAGENTA_EX = "\033[95m"
+	LIGHTCYAN_EX = "\033[96m"
+	LIGHTWHITE_EX = "\033[97m"
+	RESET = "\033[0m"
+
+
+class Style:
+	BRIGHT = "\033[1m"
+	DIM = "\033[2m"
+	NORMAL = "\033[22m"
+	RESET_ALL = "\033[0m"
+
+
+# Цветовые схемы для тем
+COLOR_SCHEMES = {
+	"Dark": {
+		"SYN_SENT": Fore.YELLOW,
+		"SYN_RECV": Fore.LIGHTYELLOW_EX,
+		"ESTABLISHED": Fore.GREEN,
+		"TIME_WAIT": Fore.MAGENTA,
+		"CLOSE_WAIT": Fore.RED,
+		"FIN_WAIT1": Fore.RED,
+		"FIN_WAIT2": Fore.RED,
+		"LAST_ACK": Fore.RED,
+		"CLOSING": Fore.RED,
+		"LISTEN": Fore.CYAN,
+		"NONE": Fore.LIGHTCYAN_EX,
+		"default": Fore.CYAN,
+		"domain_resolved": Fore.WHITE,
+		"domain_unknown": Fore.LIGHTBLACK_EX,
+		"highlight": Fore.LIGHTWHITE_EX,
+	},
+	"Light": {
+		"SYN_SENT": Fore.LIGHTYELLOW_EX,
+		"SYN_RECV": Fore.YELLOW,
+		"ESTABLISHED": Fore.LIGHTGREEN_EX,
+		"TIME_WAIT": Fore.LIGHTMAGENTA_EX,
+		"CLOSE_WAIT": Fore.LIGHTRED_EX,
+		"FIN_WAIT1": Fore.LIGHTRED_EX,
+		"FIN_WAIT2": Fore.LIGHTRED_EX,
+		"LAST_ACK": Fore.LIGHTRED_EX,
+		"CLOSING": Fore.LIGHTRED_EX,
+		"LISTEN": Fore.LIGHTCYAN_EX,
+		"NONE": Fore.CYAN,
+		"default": Fore.BLUE,
+		"domain_resolved": Fore.BLACK,
+		"domain_unknown": Fore.LIGHTBLACK_EX,
+		"highlight": Fore.LIGHTBLUE_EX,
+	},
+}
 
 STATUS_ICONS = {
-	"SYN_SENT": (Fore.YELLOW + "🟡 SYN " + Style.RESET_ALL),
-	"ESTABLISHED": (Fore.GREEN + "🟢 EST " + Style.RESET_ALL),
-	"LISTEN": (Fore.CYAN + "🔵 LIS " + Style.RESET_ALL),
-	"TIME_WAIT": (Fore.MAGENTA + "⏳ TMW " + Style.RESET_ALL),
-	"CLOSE_WAIT": (Fore.RED + "🔴 CWA " + Style.RESET_ALL),
-	"SYN_RECV": (Fore.YELLOW + "🟠 SYN_R" + Style.RESET_ALL),
-	"FIN_WAIT1": (Fore.RED + "🔴 FW1 " + Style.RESET_ALL),
-	"FIN_WAIT2": (Fore.RED + "🔴 FW2 " + Style.RESET_ALL),
-	"LAST_ACK": (Fore.RED + "🔴 LAK " + Style.RESET_ALL),
-	"CLOSING": (Fore.RED + "🔴 CLS " + Style.RESET_ALL),
-	"NONE": (Fore.CYAN + "🔵 UDP " + Style.RESET_ALL),
+	"SYN_SENT": "🟡 SYN ",
+	"SYN_RECV": "🟠 SYN_R",
+	"ESTABLISHED": "🟢 EST ",
+	"TIME_WAIT": "⏳ TMW ",
+	"CLOSE_WAIT": "🔴 CWA ",
+	"FIN_WAIT1": "🔴 FW1 ",
+	"FIN_WAIT2": "🔴 FW2 ",
+	"LAST_ACK": "🔴 LAK ",
+	"CLOSING": "🔴 CLS ",
+	"LISTEN": "🔵 LIS ",
+	"NONE": "🔵 UDP ",
 }
-DEFAULT_ICON = Fore.CYAN + "🔵 UNK " + Style.RESET_ALL
+DEFAULT_ICON = "🔵 UNK "
 
 
 def parse_style(style_str):
-	"""
-	Преобразует строку стиля (например, "BRIGHT_WHITE") в кортеж (attr, color).
-	Возвращает (атрибут_стиля, цвет) для использования в format_connection.
-	"""
 	if not style_str:
 		return "", ""
-
 	color_map = {
 		"BLACK": Fore.BLACK,
 		"RED": Fore.RED,
@@ -48,22 +107,16 @@ def parse_style(style_str):
 		"NORMAL": Style.NORMAL,
 		"": "",
 	}
-
 	parts = style_str.split("_")
 	attr = ""
 	color = ""
-
 	for part in parts:
 		if part in color_map:
 			color = color_map[part]
 		elif part in style_map:
 			attr = style_map[part]
-
 	if not color and style_str in color_map:
 		color = color_map[style_str]
-	if not color:
-		color = ""  # можно задать цвет по умолчанию, но оставим пустым
-
 	return attr, color
 
 
@@ -74,11 +127,12 @@ def format_connection(
 	domain,
 	status,
 	count,
-	highlight,  # bool
+	highlight,
 	highlight_attr,
 	highlight_color,
 	color_enabled,
 	console_cfg,
+	theme="Dark",
 ):
 	max_proc_width = console_cfg.get("max_proc_width", 24)
 	max_ip_width = console_cfg.get("max_ip_width", 45)
@@ -93,42 +147,27 @@ def format_connection(
 	domain_display = domain[:max_domain_width]
 
 	icon = STATUS_ICONS.get(status, DEFAULT_ICON)
+	scheme = COLOR_SCHEMES.get(theme, COLOR_SCHEMES["Dark"])
 
 	if color_enabled:
-		if status == "SYN_SENT":
-			status_color = Fore.YELLOW
-		elif status == "ESTABLISHED":
-			status_color = Fore.GREEN
-		elif status == "TIME_WAIT":
-			status_color = Fore.MAGENTA
-		elif status in (
-			"CLOSE_WAIT",
-			"FIN_WAIT1",
-			"FIN_WAIT2",
-			"LAST_ACK",
-			"CLOSING",
-		):
-			status_color = Fore.RED
-		else:
-			status_color = Fore.CYAN
-
+		status_color = scheme.get(status, scheme["default"])
 		colored_main = status_color + main_part + Style.RESET_ALL
-		if domain == "Домен не определён":
-			domain_display = f"{Fore.LIGHTBLACK_EX}{domain_display}{Style.RESET_ALL}"
+
+		if domain == "Домен не определён" or domain == "—":
+			domain_display = scheme["domain_unknown"] + domain_display + Style.RESET_ALL
 		else:
-			domain_display = f"{Fore.WHITE}{domain_display}{Style.RESET_ALL}"
+			domain_display = (
+				scheme["domain_resolved"] + domain_display + Style.RESET_ALL
+			)
 
 		if highlight:
 			attr = highlight_attr or ""
-			color = highlight_color or Fore.WHITE
-			# Подсвечиваем только имя процесса (часть main_part)
-			# Заменяем proc_name на подсвеченный
+			color = highlight_color or scheme["highlight"]
 			highlighted_proc = attr + color + proc_name + Style.RESET_ALL
 			colored_main = colored_main.replace(proc_name, highlighted_proc, 1)
 
 		return f"{icon}{count_badge} {colored_main} ({domain_display})"
 	else:
-		# монохром
 		if highlight:
 			main_plain = main_part.replace(proc_name, f"[{proc_name}]", 1)
 		else:

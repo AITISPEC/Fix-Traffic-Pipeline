@@ -1,0 +1,52 @@
+# Мониторинг всех соединений (без ограничения по процессам)
+# Этот пресет используется только для просмотра, не требует установки.
+target_processes: []
+
+# ----- Списки статусов для DNS-разрешения -----
+# Статусы, для которых выполняется DNS-разрешение (используются в коде)
+dns_resolve_statuses:
+  - "SYN_SENT"
+
+# Статусы, для которых НЕ выполняется DNS-разрешение (не используются в коде,
+# хранятся только для удобства переключения)
+dns_ignore_statuses:
+  - "CLOSE"
+  - "NONE"
+  - "SYN_RECV"
+  - "ESTABLISHED"
+  - "FIN_WAIT1"
+  - "FIN_WAIT2"
+  - "TIME_WAIT"
+  - "CLOSE_WAIT"
+  - "LAST_ACK"
+  - "LISTEN"
+  - "CLOSING"
+
+# ----- Списки статусов для вывода в консоль -----
+# Если список пуст – выводятся все статусы.
+# Можно указать явный список для фильтрации.
+console_output_statuses:
+  - "SYN_SENT"
+  - "ESTABLISHED"
+  - "TIME_WAIT"
+
+# Статусы, которые НЕ показывать в консоли (игнорировать)
+console_ignore_statuses:
+  - "SYN_RECV"
+  - "NONE"
+  - "CLOSE"
+  - "CLOSING"
+  - "FIN_WAIT1"
+  - "FIN_WAIT2"
+  - "CLOSE_WAIT"
+  - "LAST_ACK"
+  - "LISTEN"
+
+# ----- Технические параметры -----
+scan_interval: 0.1
+logged_connections_max: 500
+dns_timeout: 2.0
+list_flush_interval: 2.0
+
+# Правила для списков (не используются в режиме monitor-only)
+list_rules: {}

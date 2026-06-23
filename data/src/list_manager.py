@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class ListManager:
 	def __init__(self, config, lists_path, readonly=False, flush_interval=5.0):
-		self.config = config
+		self.config = config  # словарь с именами файлов (из app_config)
 		self.lists_path = lists_path
 		self.lock = threading.RLock()
 		self.readonly_mode = readonly or not lists_path
@@ -29,7 +29,6 @@ class ListManager:
 		self.exclude_domain_buffer = set()
 		self.session_buffer = set()
 
-		# ИЗМЕНЕНИЕ: параметры таймера
 		self.flush_interval = flush_interval
 		self._last_flush = time.time()
 		self._stop_timer = False
@@ -41,19 +40,17 @@ class ListManager:
 			self._start_timer()
 
 	def _create_missing_files(self):
-		for fname in self.config["lists"].values():
+		for fname in self.config.values():
 			filepath = os.path.join(self.lists_path, fname)
 			if not os.path.exists(filepath):
 				open(filepath, "w", encoding="utf-8").close()
 
 	def _load_initial_data(self):
-		ip_all = os.path.join(self.lists_path, self.config["lists"]["ip_file"])
-		domain_all = os.path.join(self.lists_path, self.config["lists"]["domain_file"])
-		exclude_ip = os.path.join(
-			self.lists_path, self.config["lists"]["exclude_ip_file"]
-		)
+		ip_all = os.path.join(self.lists_path, self.config["ip_file"])
+		domain_all = os.path.join(self.lists_path, self.config["domain_file"])
+		exclude_ip = os.path.join(self.lists_path, self.config["exclude_ip_file"])
 		exclude_domain = os.path.join(
-			self.lists_path, self.config["lists"]["exclude_domain_file"]
+			self.lists_path, self.config["exclude_domain_file"]
 		)
 
 		with open(ip_all, "r", encoding="utf-8") as f:
@@ -77,10 +74,8 @@ class ListManager:
 		if not self.lists_path or self.readonly_mode:
 			return
 		with self.lock:
-			ip_path = os.path.join(self.lists_path, self.config["lists"]["ip_file"])
-			domain_path = os.path.join(
-				self.lists_path, self.config["lists"]["domain_file"]
-			)
+			ip_path = os.path.join(self.lists_path, self.config["ip_file"])
+			domain_path = os.path.join(self.lists_path, self.config["domain_file"])
 			new_preloaded_ips = set()
 			new_preloaded_domains = set()
 			if os.path.exists(ip_path):
@@ -90,12 +85,8 @@ class ListManager:
 				with open(domain_path, "r", encoding="utf-8") as f:
 					new_preloaded_domains = {line.strip() for line in f if line.strip()}
 
-			excl_ip = os.path.join(
-				self.lists_path, self.config["lists"]["exclude_ip_file"]
-			)
-			excl_dom = os.path.join(
-				self.lists_path, self.config["lists"]["exclude_domain_file"]
-			)
+			excl_ip = os.path.join(self.lists_path, self.config["exclude_ip_file"])
+			excl_dom = os.path.join(self.lists_path, self.config["exclude_domain_file"])
 			new_exclude_ips = set()
 			new_exclude_domains = set()
 			if os.path.exists(excl_ip):
@@ -112,7 +103,6 @@ class ListManager:
 			self.session_added_ips.update(self.preloaded_ips)
 			self.session_added_domains.update(self.preloaded_domains)
 
-	# ИЗМЕНЕНИЕ: запуск фонового таймера
 	def _start_timer(self):
 		def timer_loop():
 			while not self._stop_timer:
@@ -148,7 +138,6 @@ class ListManager:
 				self.domain_buffer.add(domain)
 				self.session_buffer.add(domain)
 				logger.info(f"[list-general] + {domain} (Process: {proc_name})")
-			# ИЗМЕНЕНИЕ: убрана проверка на 50 – сброс по таймеру
 
 	def add_to_exclude_lists(self, ip, domain, proc_name="Unknown"):
 		if not self.lists_path or self.readonly_mode:
@@ -172,7 +161,6 @@ class ListManager:
 				self.exclude_domain_buffer.add(domain)
 				self.session_buffer.add(domain)
 				logger.info(f"[list-exclude] + {domain} (Process: {proc_name})")
-			# ИЗМЕНЕНИЕ: убрана проверка на 50
 
 	def flush_buffers(self):
 		self._flush_buffers()
@@ -194,7 +182,7 @@ class ListManager:
 				return ""
 
 			if self.ip_buffer:
-				ip_file = os.path.join(self.lists_path, self.config["lists"]["ip_file"])
+				ip_file = os.path.join(self.lists_path, self.config["ip_file"])
 				try:
 					prefix = ensure_newline(ip_file)
 					with open(ip_file, "a", encoding="utf-8") as f:
@@ -205,9 +193,7 @@ class ListManager:
 					self.readonly_mode = True
 
 			if self.domain_buffer:
-				domain_file = os.path.join(
-					self.lists_path, self.config["lists"]["domain_file"]
-				)
+				domain_file = os.path.join(self.lists_path, self.config["domain_file"])
 				try:
 					prefix = ensure_newline(domain_file)
 					with open(domain_file, "a", encoding="utf-8") as f:
@@ -219,7 +205,7 @@ class ListManager:
 
 			if self.exclude_ip_buffer:
 				excl_ip_file = os.path.join(
-					self.lists_path, self.config["lists"]["exclude_ip_file"]
+					self.lists_path, self.config["exclude_ip_file"]
 				)
 				try:
 					prefix = ensure_newline(excl_ip_file)
@@ -232,7 +218,7 @@ class ListManager:
 
 			if self.exclude_domain_buffer:
 				excl_dom_file = os.path.join(
-					self.lists_path, self.config["lists"]["exclude_domain_file"]
+					self.lists_path, self.config["exclude_domain_file"]
 				)
 				try:
 					prefix = ensure_newline(excl_dom_file)
@@ -245,7 +231,7 @@ class ListManager:
 
 			if self.session_buffer:
 				session_file = os.path.join(
-					self.lists_path, self.config["lists"]["session_ip_file"]
+					self.lists_path, self.config["session_ip_file"]
 				)
 				try:
 					prefix = ensure_newline(session_file)
@@ -255,7 +241,6 @@ class ListManager:
 				except Exception as e:
 					logger.error(f"Ошибка записи сессионного файла: {e}")
 
-	# ИЗМЕНЕНИЕ: метод для остановки таймера
 	def shutdown(self):
 		self._stop_timer = True
 		if self._timer_thread:

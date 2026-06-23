@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 
 class DnsResolver:
-	def __init__(self, dns_timeout=2.0, max_workers=10):
+	def __init__(self, dns_timeout=2.0, max_workers=64):
 		self.dns_timeout = dns_timeout
 		self.domain_cache = {}
 		self.cache_lock = threading.RLock()

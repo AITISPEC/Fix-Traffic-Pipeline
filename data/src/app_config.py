@@ -19,21 +19,13 @@ _DEFAULT_CONFIG = {
 		"skip_local_ips": True,
 		"highlight_style": "BRIGHT_WHITE",
 	},
-	"monitor": {
-		"dns_resolve_statuses": [
-			"SYN_SENT",
-			# "SYN_RECV",
-			# "ESTABLISHED",
-			# "FIN_WAIT1",
-			# "FIN_WAIT2",
-			# "TIME_WAIT",
-			# "CLOSE",
-			# "CLOSE_WAIT",
-			# "LAST_ACK",
-			# "LISTEN",
-			# "CLOSING",
-			# "NONE"
-		]
+	"lists": {
+		"ip_file": "ipset-all.txt",
+		"domain_file": "list-general-user.txt",
+		"general_domain_file": "list-general.txt",
+		"exclude_ip_file": "ipset-exclude-user.txt",
+		"exclude_domain_file": "list-exclude-user.txt",
+		"session_ip_file": "fix.txt",
 	},
 	"logging": {"level": "INFO", "max_file_size": 1048576, "backup_count": 5},
 }

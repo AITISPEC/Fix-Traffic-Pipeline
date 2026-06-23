@@ -87,14 +87,6 @@ ports:
   tcp: [61088, "20000-20099", 3074, 3478, "4379-4380", "27000-27050"]
   udp: [61088, "20000-20099", 3074, 3478, "4379-4380", "27000-27050"]
 
-lists:
-  ip_file: "ipset-all.txt"
-  domain_file: "list-general-user.txt"
-  general_domain_file: "list-general.txt"
-  exclude_ip_file: "ipset-exclude-user.txt"
-  exclude_domain_file: "list-exclude-user.txt"
-  session_ip_file: "fix.txt"
-
 scan_interval: 0.1
 logged_connections_max: 500
 dns_timeout: 2.0

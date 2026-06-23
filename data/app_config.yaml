@@ -1,48 +1,27 @@
-# Общие настройки приложения
 app:
-  # Таймаут ожидания завершения Python-процесса при остановке (мс)
   python_stop_timeout_ms: 2000
-  # Путь к папке lists (если пусто — определяется автоматически или через UI)
-  default_lists_path: ""
-
-# Настройки терминала (используются в C# и Python для форматирования)
+  default_lists_path: ''
 terminal:
-  # Тема: Dark / Light
-  theme: "Light"
-  # Шрифт (только для C#)
-  font_family: "Cascadia Code"
+  theme: Dark
+  font_family: Cascadia Code
   font_size: 10
-  # Отступы в выводе мониторинга (Python)
   max_proc_width: 20
   max_ip_width: 16
   max_port_width: 6
   max_domain_width: 12
-  # Цветной вывод (Python)
   color_console: true
-  # Пропускать локальные IP (Python)
   skip_local_ips: true
-  # Стиль подсветки (Python)
-  highlight_style: "BRIGHT_WHITE"
-
-# Настройки мониторинга (Python)
-monitor:
-  # Статусы, для которых выполняется DNS-разрешение (все возможные из psutil)
-  dns_resolve_statuses:
-    - "SYN_SENT"
-    # - "SYN_RECV"
-    # - "ESTABLISHED"
-    # - "FIN_WAIT1"
-    # - "FIN_WAIT2"
-    # - "TIME_WAIT"
-    # - "CLOSE"
-    # - "CLOSE_WAIT"
-    # - "LAST_ACK"
-    # - "LISTEN"
-    # - "CLOSING"
-    # - "NONE"
-
-# Настройки логирования (C# и Python)
+  highlight_style: BRIGHT_WHITE
+monitor: 
 logging:
-  level: "INFO"
-  max_file_size: 1048576   # 1 МБ
+  level: INFO
+  max_file_size: 1048576
   backup_count: 5
+selected_theme: fluent-dark
+lists:
+  ip_file: ipset-all.txt
+  domain_file: list-general-user.txt
+  general_domain_file: list-general.txt
+  exclude_ip_file: ipset-exclude-user.txt
+  exclude_domain_file: list-exclude-user.txt
+  session_ip_file: fix.txt

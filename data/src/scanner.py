@@ -18,11 +18,10 @@ def get_connections(
 ):
 	connections = []
 	try:
-		net_conns = psutil.net_connections(kind="all")
-	except Exception:
+		net_conns = psutil.net_connections(kind="inet")
+	except Exception as e:
+		print(f"Ошибка получения соединений: {e}")
 		return connections
-
-	target_names = {rule["name"].lower() for rule in target_processes}
 
 	for conn in net_conns:
 		if conn.family not in (socket.AF_INET, socket.AF_INET6):
@@ -30,8 +29,6 @@ def get_connections(
 		if not conn.raddr:
 			continue
 		remote_ip = conn.raddr.ip
-		if is_local_ip(remote_ip, skip_local_ips):
-			continue
 
 		try:
 			proc = psutil.Process(conn.pid)
@@ -41,19 +38,24 @@ def get_connections(
 		except (psutil.NoSuchProcess, psutil.AccessDenied):
 			proc_name = "Unknown"
 
+		# Всегда вычисляем is_target
 		is_target = False
-		for rule in target_processes:
-			if proc_name.lower() == rule["name"].lower():
-				if rule.get("check_path", False):
-					try:
-						exe = proc.exe().lower()
-						if game_id.lower() not in exe:
+		if target_processes:
+			for rule in target_processes:
+				if proc.name().lower() == rule["name"].lower():
+					if rule.get("check_path", False):
+						try:
+							exe = proc.exe().lower()
+							if game_id.lower() not in exe:
+								continue
+						except Exception:
 							continue
-					except Exception:
-						continue
-				is_target = True
-				break
+					is_target = True
+					break
+		else:
+			is_target = True  # если нет целевых процессов, считаем все целевыми
 
+		# Если включена фильтрация – пропускаем нецелевые
 		if filter_by_target and not is_target:
 			continue
 

@@ -23,3 +23,11 @@ games:
   installed: true
   IsInstalling: false
   IsUninstalling: false
+- id: monitor
+  name: Monitor
+  config_url: https://raw.githubusercontent.com/AITISPEC/Fix-Traffic-Pipeline/main/data/configs/monitor.yaml
+  warp_supported: false
+  version: 1
+  installed: true
+  IsInstalling: false
+  IsUninstalling: false
