@@ -27,7 +27,6 @@ class ListManager:
 		self.domain_buffer = set()
 		self.exclude_ip_buffer = set()
 		self.exclude_domain_buffer = set()
-		self.session_buffer = set()
 
 		self.flush_interval = flush_interval
 		self._last_flush = time.time()
@@ -131,12 +130,10 @@ class ListManager:
 			if ip_new:
 				self.session_added_ips.add(ip)
 				self.ip_buffer.add(ip)
-				self.session_buffer.add(ip)
 				logger.info(f"[ipset-all] + {ip} (Process: {proc_name})")
 			if domain_new:
 				self.session_added_domains.add(domain)
 				self.domain_buffer.add(domain)
-				self.session_buffer.add(domain)
 				logger.info(f"[list-general] + {domain} (Process: {proc_name})")
 
 	def add_to_exclude_lists(self, ip, domain, proc_name="Unknown"):
@@ -154,12 +151,10 @@ class ListManager:
 			if ip_new:
 				self.exclude_ips_cache.add(ip)
 				self.exclude_ip_buffer.add(ip)
-				self.session_buffer.add(ip)
 				logger.info(f"[ipset-exclude] + {ip} (Process: {proc_name})")
 			if domain_new:
 				self.exclude_domains_cache.add(domain)
 				self.exclude_domain_buffer.add(domain)
-				self.session_buffer.add(domain)
 				logger.info(f"[list-exclude] + {domain} (Process: {proc_name})")
 
 	def flush_buffers(self):
@@ -228,18 +223,6 @@ class ListManager:
 				except Exception as e:
 					logger.error(f"Ошибка записи exclude доменов: {e}")
 					self.readonly_mode = True
-
-			if self.session_buffer:
-				session_file = os.path.join(
-					self.lists_path, self.config["session_ip_file"]
-				)
-				try:
-					prefix = ensure_newline(session_file)
-					with open(session_file, "a", encoding="utf-8") as f:
-						f.write(prefix + "\n".join(self.session_buffer) + "\n")
-					self.session_buffer.clear()
-				except Exception as e:
-					logger.error(f"Ошибка записи сессионного файла: {e}")
 
 	def shutdown(self):
 		self._stop_timer = True

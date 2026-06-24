@@ -39,6 +39,7 @@ namespace PlatformLauncher.Presentation.Views
             ServiceTabControl.SetViewModel(_serviceTabViewModel);
             _sessionOrchestrator = _serviceProvider.GetRequiredService<ISessionOrchestrator>();
             _sessionOrchestrator.SetAskUserCallback(AskUserToSaveBackup);
+            _serviceTabViewModel.ListsPath = (DataContext as MainViewModel)?.ListsPath;
 
             // Загружаем иконку трея
             try

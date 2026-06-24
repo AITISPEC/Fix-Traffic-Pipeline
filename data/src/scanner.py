@@ -30,6 +30,9 @@ def get_connections(
 			continue
 		remote_ip = conn.raddr.ip
 
+		if is_local_ip(remote_ip, skip_local_ips):
+			continue
+
 		try:
 			proc = psutil.Process(conn.pid)
 			proc_name = proc.name()

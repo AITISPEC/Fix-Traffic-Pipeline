@@ -101,12 +101,12 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         public string StartButtonText => SelectedGame != null && !SelectedGame.Installed ? "Установить" : "Запустить фикс";
 
-        public bool CanStart => !IsRunning && SelectedGame != null && IsAdministrator && SelectedGame.Installed && SelectedGame.Id != "monitor"; public bool CanMonitor => !IsRunning && SelectedGame != null && IsAdministrator;
+        public bool CanStart => !IsRunning && SelectedGame != null && IsAdministrator && SelectedGame.Installed && SelectedGame.Id != "monitor";
+        public bool CanMonitor => !IsRunning && SelectedGame != null && IsAdministrator;
         public bool CanStop => IsRunning;
         public bool CanInstall => SelectedGame != null && !SelectedGame.Installed && SelectedGame.Id != "monitor";
         public bool CanUninstall => SelectedGame != null && SelectedGame.Installed && SelectedGame.Id != "monitor";
 
-        // Команды
         public ICommand RefreshPresetsCommand { get; }
         public ICommand StartCommand { get; }
         public ICommand MonitorCommand { get; }
@@ -154,7 +154,6 @@ namespace PlatformLauncher.Presentation.ViewModels
             _sessionOrchestrator.OutputReceived += msg => _terminal.WriteLine(msg);
             _sessionOrchestrator.SessionEnded += OnSessionEnded;
 
-            // Инициализация команд
             RefreshPresetsCommand = new RelayCommand(_ => _ = RefreshPresetsAsync());
             StartCommand = new RelayCommand(_ => _ = StartAsync(false), _ => CanStart);
             MonitorCommand = new RelayCommand(_ => _ = StartAsync(true), _ => CanMonitor);
@@ -170,8 +169,16 @@ namespace PlatformLauncher.Presentation.ViewModels
             ShowWindowCommand = new RelayCommand(_ => ShowWindow());
 
             DebugLogger.Write("Commands initialized, calling InitializeAsync");
-            
-            _ = InitializeAsync();
+
+            try
+            {
+                _ = InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}");
+                _logger.Error($"InitializeAsync failed: {ex}");
+            }
 
             DebugLogger.Write("=== MainViewModel.CTOR END ===");
         }
@@ -207,7 +214,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             catch (Exception ex)
             {
                 DebugLogger.WriteException("InitializeAsync ERROR", ex);
-                throw; // пробрасываем, чтобы увидеть в логах
+                throw;
             }
             DebugLogger.Write("InitializeAsync END");
         }
@@ -270,7 +277,6 @@ namespace PlatformLauncher.Presentation.ViewModels
             StatusText = success ? "Завершён" : "Ошибка";
             StatusBarText = success ? "Завершено успешно" : "Завершено с ошибкой";
             _terminal.WriteLine(success ? "✅ Мониторинг остановлен" : "❌ Мониторинг завершился с ошибкой");
-            // Обновить кнопки – OnPropertyChanged для CanStart и т.д.
             UpdateButtonStates();
         }
 
@@ -298,9 +304,9 @@ namespace PlatformLauncher.Presentation.ViewModels
         private async Task StartAsync(bool monitorOnly)
         {
             if (SelectedGame == null) return;
-            if (string.IsNullOrEmpty(ListsPath))
+            if (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath))
             {
-                _terminal.WriteLine("❌ Папка lists не найдена. Укажите путь через меню LISTS.");
+                _terminal.WriteLine("❌ Папка lists не существует или не выбрана.");
                 return;
             }
 
@@ -313,7 +319,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 IsRunning = true;
                 StatusText = "Запуск...";
-                await _sessionOrchestrator.StartAsync(SelectedGame.Id, ListsPath, monitorOnly, warpEnabled, filterProcesses); StatusText = monitorOnly ? "Мониторинг" : "Активен";
+                await _sessionOrchestrator.StartAsync(SelectedGame.Id, ListsPath, monitorOnly, warpEnabled, filterProcesses);
+                StatusText = monitorOnly ? "Мониторинг" : "Активен";
                 StatusBarText = $"{SelectedGame.Name} {(monitorOnly ? "мониторинг" : "запущен")}";
             }
             catch (Exception ex)
@@ -375,7 +382,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 SelectedGame.Installed = false;
                 _terminal.WriteLine($"✅ Фикс {SelectedGame.Name} удалён");
                 StatusBarText = $"Фикс {SelectedGame.Name} удалён";
-                LoadGames(); // обновить список
+                LoadGames();
             }
             else
             {
@@ -389,7 +396,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             if (SelectedGame == null) return;
             var dialog = _serviceProvider.GetRequiredService<GamePropertiesDialog>();
-            dialog.Owner = System.Windows.Application.Current.MainWindow;
+            dialog.Owner = Application.Current.MainWindow;
             if (dialog.ShowDialog() == true)
             {
                 _terminal.WriteLine($"✅ Настройки для {SelectedGame.Name} сохранены");
@@ -457,7 +464,6 @@ namespace PlatformLauncher.Presentation.ViewModels
                 var errorTask = proc.StandardError.ReadToEndAsync();
                 var exitTask = proc.WaitForExitAsync();
 
-                // Таймаут 30 секунд
                 if (await Task.WhenAny(exitTask, Task.Delay(30000)) != exitTask)
                 {
                     try { proc.Kill(); } catch { }

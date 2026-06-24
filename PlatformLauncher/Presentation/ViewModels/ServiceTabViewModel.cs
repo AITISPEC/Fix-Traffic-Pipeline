@@ -1,10 +1,10 @@
-﻿using Microsoft.Win32;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Win32;
 using PlatformLauncher.Core.Interfaces;
 using PlatformLauncher.Domain.Models;
 using PlatformLauncher.Presentation.Commands;
 using PlatformLauncher.Presentation.Views;
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -25,14 +25,23 @@ namespace PlatformLauncher.Presentation.ViewModels
         private readonly ISettingsManager _settingsManager;
         private readonly ILogger _logger;
         private readonly ITerminalOutput _terminal;
+        private readonly IAppConfigService _appConfigService;
+        private readonly IServiceProvider _serviceProvider; // <-- ДОБАВЛЕНО
 
         private string _warpStatus = "неизвестен";
         private bool _isWarpConnected;
         private ThemeItem _selectedTheme;
+        private string _listsPath;
 
         public event Action<string> ThemeChanged;
 
         public ObservableCollection<ThemeItem> Themes { get; } = new ObservableCollection<ThemeItem>();
+
+        public string ListsPath
+        {
+            get => _listsPath;
+            set { _listsPath = value; OnPropertyChanged(); }
+        }
 
         public string WarpStatus
         {
@@ -68,17 +77,27 @@ namespace PlatformLauncher.Presentation.ViewModels
         public ICommand StartWarpCommand { get; }
         public ICommand StopWarpCommand { get; }
         public ICommand FixInternetCommand { get; }
+        public ICommand WriteCloudflareCommand { get; }
 
-        public ServiceTabViewModel(IWarpManager warpManager, ISettingsManager settingsManager, ILogger logger, ITerminalOutput terminal)
+        public ServiceTabViewModel(
+            IWarpManager warpManager,
+            ISettingsManager settingsManager,
+            ILogger logger,
+            ITerminalOutput terminal,
+            IAppConfigService appConfigService,
+            IServiceProvider serviceProvider) // <-- ДОБАВЛЕН ПАРАМЕТР
         {
             _warpManager = warpManager;
             _settingsManager = settingsManager;
             _logger = logger;
             _terminal = terminal;
+            _appConfigService = appConfigService;
+            _serviceProvider = serviceProvider;
 
             StartWarpCommand = new RelayCommand(_ => _ = StartWarpAsync());
             StopWarpCommand = new RelayCommand(_ => _ = StopWarpAsync());
             FixInternetCommand = new RelayCommand(_ => FixInternet());
+            WriteCloudflareCommand = new RelayCommand(_ => _ = WriteCloudflareAsync());
 
             LoadThemesFromFolder();
             string savedThemeId = _settingsManager.GetTheme()?.Trim();
@@ -131,7 +150,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                     var theme = deserializer.Deserialize<ThemeItem>(yaml);
                     if (theme != null && !string.IsNullOrEmpty(theme.Id))
                     {
-                        theme.Id = theme.Id.Trim(); // обрезаем пробелы
+                        theme.Id = theme.Id.Trim();
                         Themes.Add(theme);
                         anyLoaded = true;
                     }
@@ -239,80 +258,119 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        private void FixInternet()
+        private async Task WriteCloudflareAsync()
         {
-            _terminal.WriteLine("🔄 Сброс DNS и сетевых настроек...");
             try
             {
-                // Глобальный NameServer
-                using (var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters", true))
+                var appConfig = _appConfigService.Load();
+                if (appConfig?.CloudflareDomains == null || appConfig.CloudflareDomains.Count == 0)
                 {
-                    if (key != null)
-                    {
-                        var ns = key.GetValue("NameServer") as string;
-                        if (!string.IsNullOrEmpty(ns) && (ns.Contains("127.0.2") || ns.Contains("1.1.1.1") || ns.Contains("1.0.0.1")))
-                        {
-                            // key.SetValue("NameServer", "", RegistryValueKind.String);
-                            // _logger.Info("Глобальный DNS очищен.");
-                            // _terminal.WriteLine("   ✅ Глобальный DNS очищен");
-                            _terminal.WriteLine($"   ✅ DNS {ns} в параметре {key}");
-                        }
-                    }
+                    _terminal.WriteLine("⚠️ Список cloudflare_domains в app_config.yaml пуст.");
+                    return;
                 }
-
-                // Интерфейсы
-                using (var interfacesKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"))
+                if (string.IsNullOrEmpty(ListsPath))
                 {
-                    if (interfacesKey != null)
-                    {
-                        foreach (var subKeyName in interfacesKey.GetSubKeyNames())
-                        {
-                            using (var ifaceKey = interfacesKey.OpenSubKey(subKeyName, true))
-                            {
-                                if (ifaceKey != null)
-                                {
-                                    var ns = ifaceKey.GetValue("NameServer") as string;
-                                    if (!string.IsNullOrEmpty(ns) && (ns.Contains("127.0.2") || ns.Contains("1.1.1.1") || ns.Contains("1.0.0.1")))
-                                    {
-                                        // ifaceKey.SetValue("NameServer", "", RegistryValueKind.String);
-                                        //  _logger.Info($"DNS-настройки на интерфейсе {subKeyName} очищены.");
-                                        //_terminal.WriteLine($"   ✅ DNS очищен на интерфейсе {subKeyName}");
-                                        _terminal.WriteLine($"   ✅ DNS {ns} на интерфейсе {subKeyName}");
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    _terminal.WriteLine("❌ Папка lists не выбрана.");
+                    return;
                 }
-
-                // Сброс кэша и стека TCP/IP
-                // _terminal.WriteLine("   ⏳ Сброс кэша DNS...");
-                // RunCommand("ipconfig /flushdns");
-                // _terminal.WriteLine("   ⏳ Сброс Winsock...");
-                // RunCommand("netsh winsock reset");
-                // _terminal.WriteLine("   ⏳ Сброс IP-стека...");
-                // RunCommand("netsh int ip reset");
-
-                // _logger.Info("Сброс сетевых настроек выполнен.");
-                // _terminal.WriteLine("✅ Сброс DNS и сетевых настроек выполнен.");
-                // _terminal.WriteLine("⚠️ Рекомендуется перезагрузить компьютер для полного применения.");
-
-                // Переключение на вкладку "Фиксы"
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    if (Application.Current.MainWindow is MainWindow mainWindow)
-                    {
-                        var tabControl = mainWindow.FindName("MainTabControl") as TabControl;
-                        if (tabControl != null)
-                            tabControl.SelectedIndex = 0; // переключение на первую вкладку (Фиксы)
-                    }
-                });
+                var sanitizer = _serviceProvider.GetRequiredService<IListsSanitizer>();
+                sanitizer.WriteCloudflareDomains(ListsPath, appConfig.CloudflareDomains);
+                _terminal.WriteLine($"✅ Cloudflare домены прописаны в {ListsPath}");
             }
             catch (Exception ex)
             {
-                // _logger.Error($"Ошибка сброса DNS: {ex}");
                 _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
             }
+        }
+
+        private void FixInternet()
+        {
+            _terminal.WriteLine("🔄 Сброс DNS и сетевых настроек...");
+
+            // Переключение на вкладку "Фиксы"
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                if (Application.Current.MainWindow is MainWindow mainWindow)
+                {
+                    var tabControl = mainWindow.FindName("MainTabControl") as TabControl;
+                    if (tabControl != null)
+                        tabControl.SelectedIndex = 0;
+                }
+            });
+
+            try
+            {
+                // Базовый сброс
+                RunCommand("ipconfig /flushdns");
+                RunCommand("netsh winsock reset");
+                RunCommand("netsh int ip reset");
+
+                // Определяем основной адаптер
+                string mainAdapter = GetMainNetworkAdapter();
+                if (!string.IsNullOrEmpty(mainAdapter))
+                {
+                    _terminal.WriteLine($"   Основной адаптер: {mainAdapter}");
+                    RunCommand($"netsh interface ipv4 set dns \"CloudflareWARP\" static 127.0.2.2");
+                    RunCommand($"netsh interface ipv4 add dns \"CloudflareWARP\" 127.0.2.3 index=2");
+                    RunCommand($"netsh interface ipv4 set dns \"{mainAdapter}\" static 127.0.2.2");
+                    RunCommand($"netsh interface ipv4 add dns \"{mainAdapter}\" 127.0.2.3 index=2");
+                    RunCommand($"netsh interface ipv6 set dns \"{mainAdapter}\" static ::ffff:127.0.2.2");
+                    RunCommand($"netsh interface ipv6 add dns \"{mainAdapter}\" ::ffff:127.0.2.3 index=2");
+                    RunCommand("ipconfig /flushdns");
+                    RunCommand("net stop dnscache");
+                    RunCommand("net start dnscache");
+                    RunCommand($"netsh interface set interface \"CloudflareWARP\" admin=disable");
+                    RunCommand($"netsh interface set interface \"CloudflareWARP\" admin=enable");
+                    RunCommand($"netsh interface set interface \"{mainAdapter}\" admin=disable");
+                    RunCommand($"netsh interface set interface \"{mainAdapter}\" admin=enable");
+                }
+                else
+                {
+                    _terminal.WriteLine("⚠️ Не удалось определить основной адаптер, установка DNS для адаптеров пропущена.");
+                }
+
+                _terminal.WriteLine("✅ Сброс DNS и сетевых настроек выполнен.");
+                _terminal.WriteLine("⚠️ Рекомендуется перезагрузить компьютер для полного применения.");
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+            }
+        }
+
+        private string GetMainNetworkAdapter()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("powershell", "-Command \"Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Get-NetAdapter | Select-Object -ExpandProperty Name\"")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8
+                };
+                using var p = Process.Start(psi);
+                string output = p.StandardOutput.ReadToEnd().Trim();
+                p.WaitForExit(2000);
+                if (!string.IsNullOrEmpty(output))
+                    return output;
+            }
+            catch { }
+
+            try
+            {
+                var adapters = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(a => a.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                                a.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback &&
+                                a.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Tunnel)
+                    .Select(a => a.Name)
+                    .FirstOrDefault();
+                if (!string.IsNullOrEmpty(adapters))
+                    return adapters;
+            }
+            catch { }
+
+            return null;
         }
 
         private void RunCommand(string command)

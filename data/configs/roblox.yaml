@@ -8,7 +8,7 @@ target_processes:
   - name: "nvcontainer.exe"
     check_path: false
 
-cloudflare_domains:
+include_domains:
   - "*.cloudflare-ech.com"
   - "*.encryptedsni.com"
   - "*.cloudflareclient.com"
@@ -38,8 +38,6 @@ cloudflare_domains:
   - "*.warp.plus"
   - "*.workers.dev"
   - "*.googleusercontent.com"
-
-include_domains:
   - "*.awsapps.com"
   - "*.amazon-adsystem.com"
   - "*.amazonaws.com"

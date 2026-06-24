@@ -17,11 +17,40 @@ logging:
   level: INFO
   max_file_size: 1048576
   backup_count: 5
-selected_theme: fluent-dark
+selected_theme: neo-brutalist
 lists:
   ip_file: ipset-all.txt
   domain_file: list-general-user.txt
   general_domain_file: list-general.txt
   exclude_ip_file: ipset-exclude-user.txt
   exclude_domain_file: list-exclude-user.txt
-  session_ip_file: fix.txt
+cloudflare_domains:
+- '*.cloudflare-ech.com'
+- '*.encryptedsni.com'
+- '*.cloudflareclient.com'
+- '*.cloudflareinsights.com'
+- '*.cloudflareok.com'
+- '*.cloudflareaccess.com'
+- '*.cloudflareportal.com'
+- '*.cloudflarepreview.com'
+- '*.cloudflaressl.com'
+- '*.cloudflarestatus.com'
+- '*.cloudflarestorage.com'
+- '*.cloudflare.com'
+- '*.cloudflare.net'
+- '*.cloudflare.tv'
+- '*.cloudflare-quic.com'
+- '*.cloudflare-esni.com'
+- '*.cloudflarewarp.com'
+- '*.cloudflarestream.com'
+- '*.cfl.re'
+- '*.cloudflare-dns.com'
+- '*.one.one.one.one'
+- '*.isbgpsafeyet.com'
+- '*.pages.dev'
+- '*.trycloudflare.com'
+- '*.amazon.com'
+- '*.videodelivery.net'
+- '*.warp.plus'
+- '*.workers.dev'
+- '*.googleusercontent.com'

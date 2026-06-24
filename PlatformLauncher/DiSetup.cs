@@ -3,6 +3,7 @@ using PlatformLauncher.Core.Interfaces;
 using PlatformLauncher.Core.UseCases;
 using PlatformLauncher.Infrastructure.Backup;
 using PlatformLauncher.Infrastructure.Configuration;
+using PlatformLauncher.Infrastructure.Lists;
 using PlatformLauncher.Infrastructure.Logging;
 using PlatformLauncher.Infrastructure.Network;
 using PlatformLauncher.Infrastructure.ProcessManagement;
@@ -45,6 +46,23 @@ namespace PlatformLauncher
             // Zapret / lists
             services.AddSingleton<IZapretManager, ZapretManager>();
             services.AddSingleton<IWinwsLocator, WinwsLocator>();
+            services.AddSingleton<IListsSanitizer>(provider =>
+            {
+                var logger = provider.GetRequiredService<ILogger>();
+                var appConfigService = provider.GetRequiredService<IAppConfigService>();
+                return new ListsSanitizer(logger, appConfigService);
+            });
+            services.AddSingleton<ISessionOrchestrator>(provider =>
+            {
+                var pythonManager = provider.GetRequiredService<IPythonProcessManager>();
+                var backupManager = provider.GetRequiredService<IBackupManager>();
+                var warpManager = provider.GetRequiredService<IWarpManager>();
+                var processKiller = provider.GetRequiredService<IProcessKiller>();
+                var logger = provider.GetRequiredService<ILogger>();
+                var listsSanitizer = provider.GetRequiredService<IListsSanitizer>();
+                var updateService = provider.GetRequiredService<IUpdateService>();
+                return new SessionOrchestrator(pythonManager, backupManager, warpManager, processKiller, logger, listsSanitizer, updateService);
+            });
 
             // Backup и Ports – без gameId
             services.AddSingleton<IBackupManager>(provider =>
@@ -59,14 +77,14 @@ namespace PlatformLauncher
             });
 
             // Session orchestrator – без gameId
-            services.AddSingleton<ISessionOrchestrator>(provider =>
+            services.AddSingleton<ServiceTabViewModel>(provider =>
             {
-                var logger = provider.GetRequiredService<ILogger>();
-                var pythonManager = provider.GetRequiredService<IPythonProcessManager>();
-                var backupManager = provider.GetRequiredService<IBackupManager>();
                 var warpManager = provider.GetRequiredService<IWarpManager>();
-                var processKiller = provider.GetRequiredService<IProcessKiller>();
-                return new SessionOrchestrator(pythonManager, backupManager, warpManager, processKiller, logger);
+                var settingsManager = provider.GetRequiredService<ISettingsManager>();
+                var logger = provider.GetRequiredService<ILogger>();
+                var terminal = provider.GetRequiredService<ITerminalOutput>();
+                var appConfigService = provider.GetRequiredService<IAppConfigService>();
+                return new ServiceTabViewModel(warpManager, settingsManager, logger, terminal, appConfigService, provider);
             });
 
             // Терминал

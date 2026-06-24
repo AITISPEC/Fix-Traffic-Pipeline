@@ -25,7 +25,6 @@ _DEFAULT_CONFIG = {
 		"general_domain_file": "list-general.txt",
 		"exclude_ip_file": "ipset-exclude-user.txt",
 		"exclude_domain_file": "list-exclude-user.txt",
-		"session_ip_file": "fix.txt",
 	},
 	"logging": {"level": "INFO", "max_file_size": 1048576, "backup_count": 5},
 }

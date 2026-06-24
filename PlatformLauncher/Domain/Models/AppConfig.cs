@@ -22,6 +22,9 @@ namespace PlatformLauncher.Domain.Models
 
         [YamlMember(Alias = "lists")]
         public ListsConfig Lists { get; set; }
+
+        [YamlMember(Alias = "cloudflare_domains")]
+        public List<string> CloudflareDomains { get; set; }
     }
 
     public class AppSettings

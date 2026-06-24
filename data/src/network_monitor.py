@@ -2,6 +2,7 @@ import time
 import signal
 import threading
 import logging
+import os
 import sys
 from collections import OrderedDict
 import fnmatch
@@ -39,6 +40,15 @@ class NetworkMonitor:
 			effective_config = monitor_config.copy()
 			effective_config["target_processes"] = config.get("target_processes", [])
 			effective_config["list_rules"] = config.get("list_rules", {})
+			for key in [
+				"include_domains",
+				"exclude_domains",
+				"include_ips",
+				"exclude_ips",
+				"pass_ips",
+			]:
+				if key in config:
+					effective_config[key] = config[key]
 
 			# Технические параметры с приоритетом игровых
 			for key in [
@@ -88,6 +98,13 @@ class NetworkMonitor:
 
 		# DNS-резолвер с таймаутом из effective_config
 		self.dns = DnsResolver(self.config.get("dns_timeout", 2.0))
+
+		self.stop_flag_path = (
+			os.path.join(self.list_manager.lists_path, ".stop_monitor")
+			if self.list_manager.lists_path
+			else None
+		)
+
 		self.stop_requested = False
 
 		self.print_lock = threading.Lock()
@@ -124,7 +141,12 @@ class NetworkMonitor:
 		status = conn["status"]
 		is_target = conn.get("is_target", False)
 
-		# ----- ВОССТАНОВЛЕННЫЕ ФИЛЬТРЫ (из effective_config) -----
+		# 1. pass_ips — полный пропуск
+		pass_ips = self.config.get("pass_ips", [])
+		if any(fnmatch.fnmatch(remote_ip, pat) for pat in pass_ips):
+			return
+
+		# ----- Фильтры вывода в консоль (из monitor.yaml) -----
 		output_statuses = self.config.get("console_output_statuses", [])
 		ignore_statuses = self.config.get("console_ignore_statuses", [])
 		if output_statuses and status not in output_statuses:
@@ -132,21 +154,42 @@ class NetworkMonitor:
 		if status in ignore_statuses:
 			return
 
+		# DNS-разрешение (если нужно)
 		need_dns = status in self.dns_resolve_statuses
 		domain = self.dns.resolve(remote_ip) if need_dns else "—"
 
-		# Исключение доменов (из effective_config)
+		# 2. exclude — добавляем в exclude-списки, не выводим
+		exclude_ips = self.config.get("exclude_ips", [])
 		exclude_domains = self.config.get("exclude_domains", [])
-		if domain != "—" and any(
-			fnmatch.fnmatch(domain.lower(), pat.lower()) for pat in exclude_domains
+		if remote_ip in exclude_ips or (
+			domain != "—"
+			and any(fnmatch.fnmatch(domain, pat) for pat in exclude_domains)
 		):
-			return
+			if not self.monitor_only and is_target:
+				self.list_manager.add_to_exclude_lists(
+					remote_ip, domain if domain != "—" else None, proc_name
+				)
+		# 	return  # не выводим
 
+		# 3. include — добавляем в основные списки, не выводим
+		include_ips = self.config.get("include_ips", [])
+		include_domains = self.config.get("include_domains", [])
+		if remote_ip in include_ips or (
+			domain != "—"
+			and any(fnmatch.fnmatch(domain, pat) for pat in include_domains)
+		):
+			if not self.monitor_only and is_target:
+				self.list_manager.add_to_lists_files(
+					remote_ip, domain if domain != "—" else None, proc_name
+				)
+		# 	return  # не выводим
+
+		# 4. Если не в include и не в exclude — действуем по list_rules
 		rule = self.list_rules.get(status, {})
 		action = rule.get("action", "ignore")
 		target = rule.get("target", "none")
 
-		if not self.monitor_only and is_target:  # записываем только целевые соединения
+		if not self.monitor_only and is_target:
 			if action == "add_to_main":
 				if target in ("ip_only", "both"):
 					self.list_manager.add_to_lists_files(remote_ip, None, proc_name)
@@ -158,10 +201,10 @@ class NetworkMonitor:
 				if target in ("domain_only", "both") and domain != "—":
 					self.list_manager.add_to_exclude_lists(None, domain, proc_name)
 
+		# Подсветка и вывод
 		should_highlight = is_target or proc_name.lower() in [
 			p.lower() for p in self.highlight_proc_names
 		]
-
 		formatted = format_connection(
 			proc_name,
 			remote_ip,
@@ -176,7 +219,6 @@ class NetworkMonitor:
 			self.console_cfg,
 			self.theme,
 		)
-
 		with self.print_lock:
 			print(formatted)
 			sys.stdout.flush()
@@ -194,6 +236,9 @@ class NetworkMonitor:
 		last_clean = time.time()
 		try:
 			while not self.stop_requested:
+				if self.stop_flag_path and os.path.exists(self.stop_flag_path):
+					logger.info("Обнаружен флаг остановки. Завершаемся.")
+					break
 				conns = get_connections(
 					self.config["target_processes"],
 					self.game_name,
@@ -245,16 +290,27 @@ class NetworkMonitor:
 				time.sleep(self.config.get("scan_interval", 0.1))
 
 		finally:
+			if self.stop_flag_path and os.path.exists(self.stop_flag_path):
+				try:
+					os.remove(self.stop_flag_path)
+				except:
+					pass
 			if not self.monitor_only:
 				self.list_manager.flush_buffers()
 				self.list_manager.shutdown()
 			self.dns.shutdown()
 			self.executor.shutdown(wait=True)
 			logger.info("Мониторинг остановлен.")
-			print("\033[32mМониторинг остановлен.\033[0m")
 			sys.stdout.flush()
 
 	def _stop(self, signum=None, frame=None):
-		print("\n" + "-" * 50)
+		logger.info("Остановка по сигналу.")
+		if self.stop_flag_path:
+			try:
+				with open(self.stop_flag_path, "w") as f:
+					f.write("stop")
+			except Exception as e:
+				logger.warning(f"Не удалось создать флаг остановки: {e}")
 		self.stop_requested = True
+		print("\n" + "-" * 50)
 		sys.stdout.flush()

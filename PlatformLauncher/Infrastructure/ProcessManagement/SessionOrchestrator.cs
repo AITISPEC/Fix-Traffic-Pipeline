@@ -1,8 +1,10 @@
-﻿using System;
+﻿using PlatformLauncher.Core.Interfaces;
+using PlatformLauncher.Infrastructure.Lists;
+using PlatformLauncher.Infrastructure.Services;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using PlatformLauncher.Core.Interfaces;
 
 namespace PlatformLauncher.Infrastructure.ProcessManagement
 {
@@ -13,6 +15,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         private readonly IWarpManager _warpManager;
         private readonly IProcessKiller _processKiller;
         private readonly ILogger _logger;
+        private readonly IListsSanitizer _listsSanitizer;
+        private readonly IUpdateService _updateService;
         private string _currentBackupDir;
         private bool _backupRestored;
         private bool _warpStartedByUs;
@@ -32,13 +36,18 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             IBackupManager backupManager,
             IWarpManager warpManager,
             IProcessKiller processKiller,
-            ILogger logger)
+            ILogger logger,
+            IListsSanitizer listsSanitizer,
+            IUpdateService updateService
+            )
         {
             _pythonManager = pythonManager;
             _backupManager = backupManager;
             _warpManager = warpManager;
             _processKiller = processKiller;
             _logger = logger;
+            _listsSanitizer = listsSanitizer;
+            _updateService = updateService;
 
             _pythonManager.OutputReceived += msg => OutputReceived?.Invoke(msg);
             _pythonManager.ProcessExited += OnProcessExited;
@@ -54,6 +63,18 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 _backupRestored = false;
                 _currentBackupDir = await _backupManager.CreateBackupAsync(listsPath, gameId);
                 OutputReceived?.Invoke($"✅ Бэкап листов создан\n");
+
+                // Санация
+                var config = _updateService.LoadGameConfig(gameId);
+                if (config != null)
+                {
+                    _listsSanitizer.Sanitize(listsPath, config);
+                    OutputReceived?.Invoke("✅ Санация и начальное заполнение списков выполнены");
+                }
+                else
+                {
+                    OutputReceived?.Invoke($"⚠️ Конфиг для {gameId} не найден, санация пропущена.");
+                }
             }
 
             _warpStartedByUs = false;

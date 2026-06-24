@@ -16,80 +16,60 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
 
         public void KillPythonVenvProcesses()
         {
-            foreach (var proc in Process.GetProcessesByName("python"))
+            var processes = Process.GetProcessesByName("python");
+            foreach (var proc in processes)
             {
-                try
+                using (proc)
                 {
-                    if (proc.HasExited)
+                    try
                     {
-                        proc.Dispose();
-                        continue;
+                        if (proc.HasExited) continue;
+                        string fileName = proc.MainModule?.FileName;
+                        if (!string.IsNullOrEmpty(fileName) && fileName.Contains(".venv", StringComparison.OrdinalIgnoreCase))
+                        {
+                            proc.Kill(entireProcessTree: true);
+                            proc.WaitForExit(2000);
+                            _logger.Info($"Убит python (venv) PID {proc.Id}");
+                        }
                     }
-
-                    string fileName = proc.MainModule?.FileName;
-                    if (!string.IsNullOrEmpty(fileName) && fileName.Contains(".venv", StringComparison.OrdinalIgnoreCase))
+                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
                     {
-                        proc.Kill(entireProcessTree: true);
-                        proc.WaitForExit(2000);
-                        _logger.Info($"Убит python (venv) PID {proc.Id}");
+                        _logger.Warning($"Ошибка при завершении python PID {proc.Id}: {ex.Message}");
                     }
-                }
-                catch (InvalidOperationException)
-                {
-                    // Процесс уже завершился – игнорируем
-                    _logger.Warning($"Процесс python PID {proc.Id} уже завершён");
-                }
-                catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
-                {
-                    // Отказано в доступе – возможно, процесс системный
-                    _logger.Warning($"Нет доступа к процессу python PID {proc.Id}: {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Ошибка при завершении python PID {proc.Id}: {ex.Message}");
-                }
-                finally
-                {
-                    try { proc?.Dispose(); } catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Ошибка при завершении python PID {proc.Id}: {ex.Message}");
+                    }
                 }
             }
         }
 
         public void KillWinwsProcess(string expectedPath)
         {
-            foreach (var proc in Process.GetProcessesByName("winws"))
+            var processes = Process.GetProcessesByName("winws");
+            foreach (var proc in processes)
             {
-                try
+                using (proc)
                 {
-                    if (proc.HasExited)
+                    try
                     {
-                        proc.Dispose();
-                        continue;
+                        if (proc.HasExited) continue;
+                        string exePath = proc.MainModule?.FileName;
+                        if (string.Equals(exePath, expectedPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            proc.Kill();
+                            proc.WaitForExit(2000);
+                            _logger.Info($"Убит winws.exe PID {proc.Id}");
+                        }
                     }
-
-                    string exePath = proc.MainModule?.FileName;
-                    if (string.Equals(exePath, expectedPath, StringComparison.OrdinalIgnoreCase))
+                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
                     {
-                        proc.Kill();
-                        proc.WaitForExit(2000);
-                        _logger.Info($"Убит winws.exe PID {proc.Id}");
+                        _logger.Warning($"Ошибка при завершении winws PID {proc.Id}: {ex.Message}");
                     }
-                }
-                catch (InvalidOperationException)
-                {
-                    _logger.Warning($"Процесс winws PID {proc.Id} уже завершён");
-                }
-                catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
-                {
-                    _logger.Warning($"Нет доступа к процессу winws PID {proc.Id}: {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Ошибка при завершении winws PID {proc.Id}: {ex.Message}");
-                }
-                finally
-                {
-                    try { proc?.Dispose(); } catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Ошибка при завершении winws PID {proc.Id}: {ex.Message}");
+                    }
                 }
             }
         }

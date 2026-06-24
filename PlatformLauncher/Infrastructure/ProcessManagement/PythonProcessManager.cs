@@ -19,6 +19,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         public event Action<string> OutputReceived;
         public event Action<int> ProcessExited;
 
+        private string _listsPath;
+
         public bool IsRunning => _process != null && !_process.HasExited;
 
         public PythonProcessManager(ILogger logger, IProcessKiller processKiller, IPythonEnvironmentManager pythonEnvManager)
@@ -58,7 +60,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         public async Task StartAsync(string gameId, string listsPath, bool monitorOnly = false, bool filterProcesses = true)
         {
             CleanPythonCache();
-
+            _listsPath = listsPath;
             string pythonExe = _pythonEnvManager.GetVenvPythonPath(); // <-- ИСПРАВЛЕНО: через экземпляр
             if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
                 throw new Exception("Виртуальное окружение Python не найдено.");
@@ -109,6 +111,12 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         {
             if (_process == null || _process.HasExited) return;
 
+            if (!string.IsNullOrEmpty(_listsPath))
+            {
+                var flagPath = Path.Combine(_listsPath, ".stop_monitor");
+                try { File.WriteAllText(flagPath, "stop"); } catch { }
+            }
+
             try
             {
                 _process.StandardInput.WriteLine("exit");
@@ -130,6 +138,11 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             }
             finally
             {
+                if (!string.IsNullOrEmpty(_listsPath))
+                {
+                    var flagPath = Path.Combine(_listsPath, ".stop_monitor");
+                    try { if (File.Exists(flagPath)) File.Delete(flagPath); } catch { }
+                }
                 _process?.Dispose();
                 _process = null;
             }

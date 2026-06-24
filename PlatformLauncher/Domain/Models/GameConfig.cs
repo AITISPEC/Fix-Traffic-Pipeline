@@ -113,8 +113,6 @@ namespace PlatformLauncher.Domain.Models
         [YamlMember(Alias = "exclude_domain_file")]
         public string ExcludeDomainFile { get; set; }
 
-        [YamlMember(Alias = "session_ip_file")]
-        public string SessionIpFile { get; set; }
     }
 
     public class ConsoleConfig
