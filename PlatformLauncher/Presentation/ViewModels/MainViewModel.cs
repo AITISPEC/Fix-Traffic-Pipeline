@@ -66,7 +66,12 @@ namespace PlatformLauncher.Presentation.ViewModels
         public string ListsPath
         {
             get => _listsPath;
-            set { _listsPath = value; OnPropertyChanged(); }
+            set
+            {
+                if (_listsPath == value) return;
+                _listsPath = value;
+                OnPropertyChanged();
+            }
         }
 
         public bool IsRunning
@@ -208,7 +213,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 DebugLogger.Write("FindListsPathAsync done");
                 LoadGames();
                 DebugLogger.Write("LoadGames done");
-                StatusBarText = $"Загружено {Games.Count} пресетов";
+                StatusBarText = $"Загружено пресетов: {Games.Count}";
                 DebugLogger.Write("StatusBarText updated");
             }
             catch (Exception ex)

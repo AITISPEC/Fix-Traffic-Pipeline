@@ -22,6 +22,12 @@
             <SolidColorBrush x:Key="ScrollBarBackground" Color="#2b2b2b"/>
             <SolidColorBrush x:Key="ScrollBarForeground" Color="#3c3c3c"/>
             <SolidColorBrush x:Key="ThirdlyTextBrush" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="HoverBrush" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="SelectedBrush" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="InputBackground" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="InputForeground" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="InputBorderBrush" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="SeparatorBrush" Color="#CDD6F4"/>
 
             <!-- Implicit styles для всех WPF контролов --> 
             <Style TargetType="Button">

@@ -1,0 +1,90 @@
+<UserControl x:Class="PlatformLauncher.Presentation.Views.SettingsTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <TabControl>
+        <TabItem Header="Темы">
+            <Grid Margin="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Светлые темы -->
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Светлые темы" FontWeight="Bold" Margin="0,0,0,5" />
+                    <ListBox ItemsSource="{Binding LightThemes}"
+                     SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
+                     Height="250"
+                     Background="{DynamicResource SecondaryRegionBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}"
+                     PreviewMouseLeftButtonDown="ThemesListBox_PreviewMouseLeftButtonDown">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}" 
+                                       VerticalAlignment="Center" 
+                                       Width="130" 
+                                       Margin="0,0,10,0"
+                                       Foreground="{DynamicResource PrimaryTextBrush}" />
+                                    <Border Width="22" Height="22" Margin="2,0" 
+                                    Background="{Binding Background}" 
+                                    BorderBrush="Gray" BorderThickness="1" 
+                                    ToolTip="Фон" />
+                                    <Border Width="22" Height="22" Margin="2,0" 
+                                    Background="{Binding Accent}" 
+                                    BorderBrush="Gray" BorderThickness="1" 
+                                    ToolTip="Акцент" />
+                                    <Border Width="22" Height="22" Margin="2,0" 
+                                    Background="{Binding Foreground}" 
+                                    BorderBrush="Gray" BorderThickness="1" 
+                                    ToolTip="Текст" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+
+                <!-- Тёмные темы -->
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Тёмные темы" FontWeight="Bold" Margin="0,0,0,5" />
+                    <ListBox ItemsSource="{Binding DarkThemes}"
+                     SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
+                     Height="250"
+                     Background="{DynamicResource SecondaryRegionBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}"
+                     PreviewMouseLeftButtonDown="ThemesListBox_PreviewMouseLeftButtonDown">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}" 
+                                       VerticalAlignment="Center" 
+                                       Width="130" 
+                                       Margin="0,0,10,0"
+                                       Foreground="{DynamicResource PrimaryTextBrush}" />
+                                    <Border Width="22" Height="22" Margin="2,0" 
+                                    Background="{Binding Background}" 
+                                    BorderBrush="Gray" BorderThickness="1" 
+                                    ToolTip="Фон" />
+                                    <Border Width="22" Height="22" Margin="2,0" 
+                                    Background="{Binding Accent}" 
+                                    BorderBrush="Gray" BorderThickness="1" 
+                                    ToolTip="Акцент" />
+                                    <Border Width="22" Height="22" Margin="2,0" 
+                                    Background="{Binding Foreground}" 
+                                    BorderBrush="Gray" BorderThickness="1" 
+                                    ToolTip="Текст" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Grid>
+        </TabItem>
+        <TabItem Header="Монитор">
+            <StackPanel Margin="10">
+                <TextBlock Text="Настройки мониторинга (в разработке)" />
+            </StackPanel>
+        </TabItem>
+    </TabControl>
+</UserControl>

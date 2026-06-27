@@ -4,9 +4,9 @@ using System.Windows.Controls;
 
 namespace PlatformLauncher.Presentation.Views
 {
-    public partial class ServiceTab : UserControl
+    public partial class SettingsTab : UserControl
     {
-        public ServiceTab()
+        public SettingsTab()
         {
             InitializeComponent();
         }
@@ -25,21 +25,6 @@ namespace PlatformLauncher.Presentation.Views
                     vm.SelectedTheme = theme;
                     var mainWindow = System.Windows.Application.Current.MainWindow as MainWindow;
                     mainWindow?.ApplyTheme(theme.Id);
-                }
-            }
-        }
-
-        private void TabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (sender is TabControl tabControl && DataContext is ServiceTabViewModel vm)
-            {
-                if (tabControl.SelectedItem is TabItem selectedTab && selectedTab.Header?.ToString() == "WARP")
-                {
-                    vm.StartWarpStatusMonitoring();
-                }
-                else
-                {
-                    vm.StopWarpStatusMonitoring();
                 }
             }
         }

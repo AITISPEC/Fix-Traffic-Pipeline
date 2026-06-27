@@ -33,6 +33,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         private bool _isWarpConnected;
         private ThemeItem _selectedTheme;
         private string _listsPath;
+        private System.Windows.Threading.DispatcherTimer _warpStatusTimer;
 
         public event Action<string> ThemeChanged;
         public event Action<string> ListsPathChanged;
@@ -46,6 +47,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             get => _listsPath;
             set
             {
+                if (_listsPath == value) return;
                 _listsPath = value;
                 OnPropertyChanged();
                 ListsPathChanged?.Invoke(value);
@@ -89,6 +91,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         public ICommand WriteCloudflareCommand { get; }
         public ICommand SelectListsPathCommand { get; }
         public ICommand OpenListsFolderCommand { get; }
+        public ICommand RunServiceBatCommand { get; }
 
         public ServiceTabViewModel(
             IWarpManager warpManager,
@@ -111,6 +114,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             WriteCloudflareCommand = new RelayCommand(_ => _ = WriteCloudflareAsync());
             SelectListsPathCommand = new RelayCommand(_ => SelectListsPath());
             OpenListsFolderCommand = new RelayCommand(_ => OpenListsFolder());
+            RunServiceBatCommand = new RelayCommand(_ => RunServiceBat());
 
             LoadThemesFromFolder();
             string savedThemeId = _settingsManager.GetTheme()?.Trim();
@@ -139,17 +143,26 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             try
             {
-                var dialog = new Microsoft.Win32.OpenFolderDialog();
-                dialog.Title = "Выберите папку lists";
-                if (dialog.ShowDialog() == true)
+                var dialog = new OpenFolderDialog
+                {
+                    Title = "Выберите папку lists",
+                    InitialDirectory = string.IsNullOrEmpty(ListsPath) ? @"C:\" : ListsPath
+                };
+
+                var owner = Application.Current.MainWindow;
+
+                if (dialog.ShowDialog(owner) == true)
                 {
                     ListsPath = dialog.FolderName;
+
                     _terminal.WriteLine($"✅ Папка lists выбрана: {ListsPath}");
+                    DebugLogger.Write($"✅ Папка lists выбрана: {ListsPath}");
                 }
             }
             catch (Exception ex)
             {
                 _terminal.WriteLine($"❌ Ошибка выбора папки: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка выбора папки: {ex.Message}");
             }
         }
 
@@ -166,6 +179,57 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 _terminal.WriteLine($"❌ Ошибка открытия папки: {ex.Message}");
             }
+        }
+
+        private void RunServiceBat()
+        {
+            if (string.IsNullOrEmpty(ListsPath))
+            {
+                _terminal.WriteLine("❌ Папка lists не выбрана");
+                return;
+            }
+
+            string parentDir = Path.GetDirectoryName(ListsPath.TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string batPath = Path.Combine(parentDir, "service.bat");
+
+            if (!File.Exists(batPath))
+            {
+                _terminal.WriteLine($" Файл service.bat не найден: {batPath}");
+                return;
+            }
+
+            try
+            {
+                var psi = new ProcessStartInfo("cmd.exe", $"/c \"{batPath}\"")
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = parentDir
+                };
+                Process.Start(psi);
+                _terminal.WriteLine($"✅ service.bat запущен");
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка запуска: {ex.Message}");
+            }
+        }
+
+        public void StartWarpStatusMonitoring()
+        {
+            if (_warpStatusTimer != null) return;
+            _warpStatusTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2)
+            };
+            _warpStatusTimer.Tick += async (s, e) => await UpdateStatusAsync();
+            _warpStatusTimer.Start();
+        }
+
+        public void StopWarpStatusMonitoring()
+        {
+            _warpStatusTimer?.Stop();
+            _warpStatusTimer = null;
         }
 
         private void LoadThemesFromFolder()

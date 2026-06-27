@@ -17,7 +17,7 @@ logging:
   level: INFO
   max_file_size: 1048576
   backup_count: 5
-selected_theme: mocha-mousse-dark
+selected_theme: cyberpunk-dark
 lists:
   ip_file: ipset-all.txt
   domain_file: list-general-user.txt

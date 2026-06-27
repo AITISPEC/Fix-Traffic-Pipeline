@@ -1,123 +1,45 @@
 <UserControl x:Class="PlatformLauncher.Presentation.Views.ServiceTab"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <TabControl>
-        <TabItem Header="LISTS">
+    <TabControl SelectionChanged="TabControl_SelectionChanged">
+        <TabItem Header="ZDY">
             <StackPanel Margin="10">
                 <TextBlock Text="Текущее расположение папки lists:" FontWeight="Bold" Margin="0,0,0,5" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                <TextBlock Text="{Binding ListsPath}" TextWrapping="Wrap" Margin="0,0,0,15" Foreground="{DynamicResource PrimaryTextBrush}"/>
-
+                <TextBlock Text="{Binding ListsPath}"
+                           TextWrapping="Wrap" Margin="0,0,0,15"
+                           Foreground="{DynamicResource PrimaryTextBrush}"/>
                 <Button Content="Выбрать расположение" Width="200" Height="30" 
-                        Command="{Binding SelectListsPathCommand}" HorizontalAlignment="Left"/>
+                        Command="{Binding SelectListsPathCommand}"
+                        HorizontalAlignment="Left"/>
                 <Button Content="Открыть папку" Width="200" Height="30" Margin="0,10,0,0" 
-                        Command="{Binding OpenListsFolderCommand}" HorizontalAlignment="Left"/>
+                        Command="{Binding OpenListsFolderCommand}"
+                        HorizontalAlignment="Left"/>
+                <Button Content="service.bat" Width="200" Height="30" Margin="0,10,0,0"
+                        Command="{Binding RunServiceBatCommand}"
+                        HorizontalAlignment="Left" />
             </StackPanel>
         </TabItem>
         <TabItem Header="WARP">
             <StackPanel Margin="10">
-                <Button Content="Запустить WARP" Width="150" Height="30"
-                       Command="{Binding StartWarpCommand}"
-                       IsEnabled="{Binding CanStartWarp}"/>
-                <Button Content="Отключить WARP" Width="150" Height="30" Margin="0,10,0,0"
-                       Command="{Binding StopWarpCommand}"
-                       IsEnabled="{Binding CanStopWarp}"/>
-                <Button Content="Прописать в листы" 
-                       Command="{Binding WriteCloudflareCommand}"
-                       Width="150" Height="30" Margin="0,10,0,0"/>
                 <TextBlock Text="{Binding WarpStatus, StringFormat='Статус: {0}'}" Margin="0,10,0,0"/>
-            </StackPanel>
-        </TabItem>
-        <TabItem Header="Темы">
-            <Grid Margin="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Светлые темы -->
-                <StackPanel Grid.Column="0">
-                    <TextBlock Text="Светлые темы" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <ListBox ItemsSource="{Binding LightThemes}"
-                     SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
-                     Height="250"
-                     Background="{DynamicResource SecondaryRegionBrush}"
-                     BorderBrush="{DynamicResource BorderBrush}"
-                     PreviewMouseLeftButtonDown="ThemesListBox_PreviewMouseLeftButtonDown">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding DisplayName}" 
-                                       VerticalAlignment="Center" 
-                                       Width="130" 
-                                       Margin="0,0,10,0"
-                                       Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                    <Border Width="22" Height="22" Margin="2,0" 
-                                    Background="{Binding Background}" 
-                                    BorderBrush="Gray" BorderThickness="1" 
-                                    ToolTip="Фон"/>
-                                    <Border Width="22" Height="22" Margin="2,0" 
-                                    Background="{Binding Accent}" 
-                                    BorderBrush="Gray" BorderThickness="1" 
-                                    ToolTip="Акцент"/>
-                                    <Border Width="22" Height="22" Margin="2,0" 
-                                    Background="{Binding Foreground}" 
-                                    BorderBrush="Gray" BorderThickness="1" 
-                                    ToolTip="Текст"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </StackPanel>
-
-                <!-- Тёмные темы -->
-                <StackPanel Grid.Column="2">
-                    <TextBlock Text="Тёмные темы" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <ListBox ItemsSource="{Binding DarkThemes}"
-                     SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
-                     Height="250"
-                     Background="{DynamicResource SecondaryRegionBrush}"
-                     BorderBrush="{DynamicResource BorderBrush}"
-                     PreviewMouseLeftButtonDown="ThemesListBox_PreviewMouseLeftButtonDown">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding DisplayName}" 
-                                       VerticalAlignment="Center" 
-                                       Width="130" 
-                                       Margin="0,0,10,0"
-                                       Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                    <Border Width="22" Height="22" Margin="2,0" 
-                                    Background="{Binding Background}" 
-                                    BorderBrush="Gray" BorderThickness="1" 
-                                    ToolTip="Фон"/>
-                                    <Border Width="22" Height="22" Margin="2,0" 
-                                    Background="{Binding Accent}" 
-                                    BorderBrush="Gray" BorderThickness="1" 
-                                    ToolTip="Акцент"/>
-                                    <Border Width="22" Height="22" Margin="2,0" 
-                                    Background="{Binding Foreground}" 
-                                    BorderBrush="Gray" BorderThickness="1" 
-                                    ToolTip="Текст"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </StackPanel>
-            </Grid>
-        </TabItem>
-        <TabItem Header="Монитор">
-            <StackPanel Margin="10">
-                <TextBlock Text="Настройки мониторинга (в разработке)"/>
+                <Button Content="Запустить WARP" Width="150" Height="30"
+                        Command="{Binding StartWarpCommand}"
+                        IsEnabled="{Binding CanStartWarp}"
+                        HorizontalAlignment="Left"/>
+                <Button Content="Отключить WARP" Width="150" Height="30" Margin="0,10,0,0"
+                        Command="{Binding StopWarpCommand}"
+                        IsEnabled="{Binding CanStopWarp}"
+                        HorizontalAlignment="Left"/>
+                <Button Content="Прописать в листы" Width="150" Height="30" Margin="0,10,0,0"
+                        Command="{Binding WriteCloudflareCommand}"
+                        HorizontalAlignment="Left"/>
             </StackPanel>
         </TabItem>
         <TabItem Header="Помощь">
             <StackPanel Margin="10">
-                <Button Content="Починить интернет (сброс DNS)"
-                       Command="{Binding FixInternetCommand}"
-                       Width="200" Height="30" Margin="0,10"/>
-                <TextBlock Text="При проблемах с доступом после установки WARP запустите эту функцию. Она очищает зависшие DNS-настройки Cloudflare."
-                          TextWrapping="Wrap" Margin="0,10,0,0"/>
+                <Button Content="Починить интернет (сброс DNS)" Width="200" Height="30" Margin="0,10"
+                        Command="{Binding FixInternetCommand}"
+                        HorizontalAlignment="Left"/>
             </StackPanel>
         </TabItem>
     </TabControl>

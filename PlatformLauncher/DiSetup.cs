@@ -104,6 +104,7 @@ namespace PlatformLauncher
             // Окна и контролы
             services.AddSingleton<MainWindow>();
             services.AddTransient<ServiceTab>();
+            services.AddTransient<SettingsTab>();
             services.AddTransient<GamePropertiesDialog>();
 
             // Тема (MainWindow реализует IThemeManager)

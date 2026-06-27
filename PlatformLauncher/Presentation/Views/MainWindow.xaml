@@ -43,39 +43,64 @@
             </Grid>
         </ControlTemplate>
 
-        <!-- Implicit styles для всех WPF контролов — ПЕРЕКРЫВАЮТ HandyControl -->
-        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Style.Triggers>
-                <!-- Наведение мыши -->
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
-                    <Setter Property="BorderBrush" Value="{DynamicResource HoverBrush}"/>
-                </Trigger>
-                <!-- Нажатие -->
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
-                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                </Trigger>
-                <!-- Неактивная -->
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource ThirdlyTextBrush}"/>
-                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                    <Setter Property="Opacity" Value="0.4"/>
-                    <Setter Property="Cursor" Value="Arrow"/>
-                </Trigger>
-            </Style.Triggers>
+        <Style x:Key="ScrollBarArrowButton" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent">
+                            <Path x:Name="Arrow"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RepeatButton}}"
+                          Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!-- ListBox с BasedOn -->
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Border"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="3"
+                        Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource HoverBrush}" />
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource BorderBrush}" />
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource SecondaryRegionBrush}" />
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                <Setter TargetName="Border" Property="Opacity" Value="0.4" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
             <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
@@ -95,7 +120,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- TabControl с BasedOn -->
         <Style TargetType="TabControl" BasedOn="{StaticResource {x:Type TabControl}}">
             <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
@@ -155,7 +179,7 @@
                                 <Setter Property="Panel.ZIndex" Value="1" />
                             </Trigger>
                             <Trigger SourceName="Border" Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource HoverBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -303,6 +327,9 @@
             <TabItem Header="Сервис">
                 <views:ServiceTab x:Name="ServiceTabControl"/>
             </TabItem>
+            <TabItem Header="Настройки">
+                <views:SettingsTab x:Name="SettingsTabControl" />
+            </TabItem>
         </TabControl>
 
         <StatusBar Grid.Row="2" Margin="0,10,0,0" Grid.ColumnSpan="3">
@@ -315,7 +342,8 @@
                         ToolTipText="Fix Traffic Pipeline"
                         DoubleClickCommand="{Binding ShowWindowCommand}"
                         Grid.ColumnSpan="3"
-                        Grid.RowSpan="2">
+                        Grid.RowSpan="2"
+                        Visibility="Collapsed">
             <tb:TaskbarIcon.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Показать" Command="{Binding ShowWindowCommand}"/>
