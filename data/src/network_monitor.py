@@ -63,6 +63,7 @@ class NetworkMonitor:
 		self.config = effective_config
 		self.game_name = game_name
 		self.monitor_only = monitor_only
+		self.filter_by_target = filter_by_target
 
 		# Настройки терминала (из app_config)
 		self.theme = term_cfg.get("theme", "Dark")
@@ -243,7 +244,7 @@ class NetworkMonitor:
 					self.config["target_processes"],
 					self.game_name,
 					self.skip_local_ips,
-					filter_by_target=bool(self.config.get("target_processes")),
+					filter_by_target=self.filter_by_target,
 				)
 
 				now = time.time()

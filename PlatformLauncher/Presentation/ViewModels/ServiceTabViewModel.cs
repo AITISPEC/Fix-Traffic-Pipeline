@@ -5,6 +5,7 @@ using PlatformLauncher.Domain.Models;
 using PlatformLauncher.Presentation.Commands;
 using PlatformLauncher.Presentation.Views;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -26,7 +27,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         private readonly ILogger _logger;
         private readonly ITerminalOutput _terminal;
         private readonly IAppConfigService _appConfigService;
-        private readonly IServiceProvider _serviceProvider; // <-- ДОБАВЛЕНО
+        private readonly IServiceProvider _serviceProvider;
 
         private string _warpStatus = "неизвестен";
         private bool _isWarpConnected;
@@ -34,13 +35,21 @@ namespace PlatformLauncher.Presentation.ViewModels
         private string _listsPath;
 
         public event Action<string> ThemeChanged;
+        public event Action<string> ListsPathChanged;
 
-        public ObservableCollection<ThemeItem> Themes { get; } = new ObservableCollection<ThemeItem>();
+        public ObservableCollection<ThemeItem> LightThemes { get; } = new ObservableCollection<ThemeItem>();
+        public ObservableCollection<ThemeItem> DarkThemes { get; } = new ObservableCollection<ThemeItem>();
+        public IEnumerable<ThemeItem> AllThemes => LightThemes.Concat(DarkThemes);
 
         public string ListsPath
         {
             get => _listsPath;
-            set { _listsPath = value; OnPropertyChanged(); }
+            set
+            {
+                _listsPath = value;
+                OnPropertyChanged();
+                ListsPathChanged?.Invoke(value);
+            }
         }
 
         public string WarpStatus
@@ -78,6 +87,8 @@ namespace PlatformLauncher.Presentation.ViewModels
         public ICommand StopWarpCommand { get; }
         public ICommand FixInternetCommand { get; }
         public ICommand WriteCloudflareCommand { get; }
+        public ICommand SelectListsPathCommand { get; }
+        public ICommand OpenListsFolderCommand { get; }
 
         public ServiceTabViewModel(
             IWarpManager warpManager,
@@ -98,18 +109,22 @@ namespace PlatformLauncher.Presentation.ViewModels
             StopWarpCommand = new RelayCommand(_ => _ = StopWarpAsync());
             FixInternetCommand = new RelayCommand(_ => FixInternet());
             WriteCloudflareCommand = new RelayCommand(_ => _ = WriteCloudflareAsync());
+            SelectListsPathCommand = new RelayCommand(_ => SelectListsPath());
+            OpenListsFolderCommand = new RelayCommand(_ => OpenListsFolder());
 
             LoadThemesFromFolder();
             string savedThemeId = _settingsManager.GetTheme()?.Trim();
 
-            var savedTheme = Themes.FirstOrDefault(t => t.Id.Equals(savedThemeId, StringComparison.OrdinalIgnoreCase));
+            var savedTheme = AllThemes.FirstOrDefault(t => t.Id.Equals(savedThemeId, StringComparison.OrdinalIgnoreCase));
             if (savedTheme != null)
             {
                 SelectedTheme = savedTheme;
             }
             else
             {
-                var defaultTheme = Themes.FirstOrDefault(t => t.Id == "fluent-light") ?? Themes.FirstOrDefault();
+                var defaultTheme = LightThemes.FirstOrDefault(t => t.Id == "fluent-light")
+                                ?? DarkThemes.FirstOrDefault(t => t.Id == "fluent-dark")
+                                ?? AllThemes.FirstOrDefault();
                 if (defaultTheme != null)
                 {
                     _selectedTheme = defaultTheme;
@@ -120,84 +135,163 @@ namespace PlatformLauncher.Presentation.ViewModels
             _ = UpdateStatusAsync();
         }
 
+        private void SelectListsPath()
+        {
+            try
+            {
+                var dialog = new Microsoft.Win32.OpenFolderDialog();
+                dialog.Title = "Выберите папку lists";
+                if (dialog.ShowDialog() == true)
+                {
+                    ListsPath = dialog.FolderName;
+                    _terminal.WriteLine($"✅ Папка lists выбрана: {ListsPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка выбора папки: {ex.Message}");
+            }
+        }
+
+        private void OpenListsFolder()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(ListsPath) && Directory.Exists(ListsPath))
+                    Process.Start("explorer.exe", ListsPath);
+                else
+                    _terminal.WriteLine("❌ Папка lists не существует или не выбрана");
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка открытия папки: {ex.Message}");
+            }
+        }
+
         private void LoadThemesFromFolder()
         {
             string themesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "themes");
+            DebugLogger.Write($"LoadThemesFromFolder: checking {themesFolder}");
+
+            LightThemes.Clear();
+            DarkThemes.Clear();
+
             if (!Directory.Exists(themesFolder))
             {
-                _logger.Warning("Папка data/themes не найдена, загружаем встроенные темы");
+                DebugLogger.Write("Папка data/themes не найдена, загружаем встроенные темы");
                 LoadBuiltinThemes();
                 return;
             }
 
-            var files = Directory.GetFiles(themesFolder, "*.yaml");
-            if (files.Length == 0)
-            {
-                _logger.Warning("В папке data/themes нет YAML-файлов, загружаем встроенные темы");
-                LoadBuiltinThemes();
-                return;
-            }
-
-            Themes.Clear();
             var deserializer = new DeserializerBuilder().Build();
             bool anyLoaded = false;
 
-            foreach (var file in files)
+            // Загружаем из подпапок Dark и Light
+            foreach (var subFolder in new[] { "Light", "Dark" })
             {
-                try
+                string folderPath = Path.Combine(themesFolder, subFolder);
+                if (!Directory.Exists(folderPath))
                 {
-                    var yaml = File.ReadAllText(file);
-                    var theme = deserializer.Deserialize<ThemeItem>(yaml);
-                    if (theme != null && !string.IsNullOrEmpty(theme.Id))
-                    {
-                        theme.Id = theme.Id.Trim();
-                        Themes.Add(theme);
-                        anyLoaded = true;
-                    }
+                    DebugLogger.Write($"Подпапка {subFolder} не найдена");
+                    continue;
                 }
-                catch (Exception ex)
+
+                var files = Directory.GetFiles(folderPath, "*.yaml");
+                DebugLogger.Write($"Найдено {files.Length} YAML файлов в {subFolder}");
+
+                foreach (var file in files)
                 {
-                    _logger.Error($"Ошибка загрузки темы из {file}: {ex.Message}");
+                    try
+                    {
+                        var yaml = File.ReadAllText(file);
+                        var theme = deserializer.Deserialize<ThemeItem>(yaml);
+                        if (theme != null && !string.IsNullOrEmpty(theme.Id))
+                        {
+                            theme.Id = theme.Id.Trim();
+                            theme.TerminalTheme = subFolder; // принудительно устанавливаем на основе папки
+                            if (subFolder == "Light")
+                                LightThemes.Add(theme);
+                            else
+                                DarkThemes.Add(theme);
+                            anyLoaded = true;
+                            DebugLogger.Write($"Загружена тема: {theme.Id} - {theme.DisplayName} ({subFolder})");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLogger.WriteException($"Ошибка загрузки темы из {file}", ex);
+                    }
                 }
             }
 
             if (!anyLoaded)
             {
-                _logger.Warning("Не удалось загрузить ни одной темы из data/themes, загружаем встроенные");
+                DebugLogger.Write("Не удалось загрузить ни одной темы, загружаем встроенные");
                 LoadBuiltinThemes();
             }
             else
             {
-                _logger.Info($"Загружено {Themes.Count} тем из data/themes");
+                DebugLogger.Write($"Загружено тем: Light={LightThemes.Count}, Dark={DarkThemes.Count}");
             }
         }
 
         private void LoadBuiltinThemes()
         {
-            Themes.Clear();
-            Themes.Add(new ThemeItem
+            LightThemes.Clear();
+            DarkThemes.Clear();
+
+            LightThemes.Add(new ThemeItem
             {
                 Id = "fluent-light",
                 DisplayName = "Fluent Light",
                 TerminalTheme = "Light",
-                Background = "#FFFFFF",
-                Foreground = "#1A1A2E",
-                Accent = "#6C8BFF",
-                ControlBackground = "#F5F6FA",
-                ControlForeground = "#1A1A2E",
-                BorderBrush = "#D1D5E0"
+                Background = "#FAFAFA",
+                Foreground = "#1E293B",
+                Accent = "#4F46E5",
+                ControlBackground = "#F1F5F9",
+                ControlForeground = "#1E293B",
+                BorderBrush = "#E2E8F0",
+                ScrollBarBackground = "#F1F5F9",
+                ScrollBarForeground = "#CBD5E1",
+                HoverBrush = "#EEF2F6",
+                SelectedBrush = "#E0E7FF",
+                DisabledBrush = "#F8FAFC",
+                DisabledForeground = "#94A3B8",
+                InputBackground = "#FFFFFF",
+                InputForeground = "#1E293B",
+                InputBorderBrush = "#CBD5E1",
+                ErrorBrush = "#EF4444",
+                WarningBrush = "#F59E0B",
+                SuccessBrush = "#10B981",
+                SeparatorBrush = "#E2E8F0",
+                OverlayColor = "#400F172A"
             });
-            Themes.Add(new ThemeItem
+
+            DarkThemes.Add(new ThemeItem
             {
                 Id = "fluent-dark",
                 DisplayName = "Fluent Dark",
                 TerminalTheme = "Dark",
-                Background = "#1A1A2E",
+                Background = "#1E1E2E",
                 Foreground = "#CDD6F4",
                 Accent = "#89B4FA",
-                ControlBackground = "#2A2A3E",
+                ControlBackground = "#2A2A3D",
                 ControlForeground = "#CDD6F4",
-                BorderBrush = "#454560"
+                BorderBrush = "#3F3F56",
+                ScrollBarBackground = "#252538",
+                ScrollBarForeground = "#45475A",
+                HoverBrush = "#313244",
+                SelectedBrush = "#364A75",
+                DisabledBrush = "#252538",
+                DisabledForeground = "#6C7086",
+                InputBackground = "#2A2A3D",
+                InputForeground = "#CDD6F4",
+                InputBorderBrush = "#45475A",
+                ErrorBrush = "#F38BA8",
+                WarningBrush = "#F9E2AF",
+                SuccessBrush = "#A6E3A1",
+                SeparatorBrush = "#313244",
+                OverlayColor = "#8011111B"
             });
         }
 
@@ -260,6 +354,17 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private async Task WriteCloudflareAsync()
         {
+            // Переключение на вкладку "Фиксы"
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                if (Application.Current.MainWindow is MainWindow mainWindow)
+                {
+                    var tabControl = mainWindow.FindName("MainTabControl") as TabControl;
+                    if (tabControl != null)
+                        tabControl.SelectedIndex = 0;
+                }
+            });
+
             try
             {
                 var appConfig = _appConfigService.Load();

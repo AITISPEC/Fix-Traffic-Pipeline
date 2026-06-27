@@ -39,10 +39,10 @@ namespace PlatformLauncher.Presentation.Services
 
         private void WriteLineInternal(string line)
         {
-            if (_terminal != null && _terminal.ConPTYTerm != null)
+            // Исправлено: добавлена проверка на null
+            if (_terminal?.ConPTYTerm != null)
             {
                 _terminal.ConPTYTerm.WriteToUITerminal(line + Environment.NewLine);
-                // Flush() не существует — убираем
             }
         }
 
@@ -63,7 +63,8 @@ namespace PlatformLauncher.Presentation.Services
 
         private void ClearInternal()
         {
-            _terminal?.ConPTYTerm?.ClearUITerminal(true);
+            if (_terminal?.ConPTYTerm != null)
+                _terminal.ConPTYTerm.ClearUITerminal(true);
         }
     }
 }

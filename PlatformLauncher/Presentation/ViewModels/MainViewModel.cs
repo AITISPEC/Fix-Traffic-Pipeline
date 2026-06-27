@@ -114,8 +114,6 @@ namespace PlatformLauncher.Presentation.ViewModels
         public ICommand InstallCommand { get; }
         public ICommand UninstallCommand { get; }
         public ICommand PropertiesCommand { get; }
-        public ICommand SelectListsPathCommand { get; }
-        public ICommand OpenListsFolderCommand { get; }
         public ICommand FilterCommand { get; }
         public ICommand RunCommandCommand { get; }
         public ICommand ClearConsoleCommand { get; }
@@ -154,32 +152,34 @@ namespace PlatformLauncher.Presentation.ViewModels
             _sessionOrchestrator.OutputReceived += msg => _terminal.WriteLine(msg);
             _sessionOrchestrator.SessionEnded += OnSessionEnded;
 
-            RefreshPresetsCommand = new RelayCommand(_ => _ = RefreshPresetsAsync());
-            StartCommand = new RelayCommand(_ => _ = StartAsync(false), _ => CanStart);
-            MonitorCommand = new RelayCommand(_ => _ = StartAsync(true), _ => CanMonitor);
-            StopCommand = new RelayCommand(_ => _ = StopAsync(), _ => CanStop);
-            InstallCommand = new RelayCommand(_ => _ = InstallAsync(), _ => CanInstall);
-            UninstallCommand = new RelayCommand(_ => _ = UninstallAsync(), _ => CanUninstall);
+            RefreshPresetsCommand = new RelayCommand(async _ => await RefreshPresetsAsync(), _ => true);
+            StartCommand = new RelayCommand(async _ => await StartAsync(false), _ => CanStart);
+            MonitorCommand = new RelayCommand(async _ => await StartAsync(true), _ => CanMonitor);
+            StopCommand = new RelayCommand(async _ => await StopAsync(), _ => CanStop);
+            InstallCommand = new RelayCommand(async _ => await InstallAsync(), _ => CanInstall);
+            UninstallCommand = new RelayCommand(async _ => await UninstallAsync(), _ => CanUninstall);
             PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => SelectedGame != null);
-            SelectListsPathCommand = new RelayCommand(_ => SelectListsPath());
-            OpenListsFolderCommand = new RelayCommand(_ => OpenListsFolder());
             FilterCommand = new RelayCommand(_ => ApplyFilters());
-            RunCommandCommand = new RelayCommand(param => _ = RunCommandAsync(param?.ToString()));
+            RunCommandCommand = new RelayCommand(async param => await RunCommandAsync(param?.ToString()));
             ClearConsoleCommand = new RelayCommand(_ => ClearConsole());
             ShowWindowCommand = new RelayCommand(_ => ShowWindow());
 
             DebugLogger.Write("Commands initialized, calling InitializeAsync");
 
-            try
+            _ = Task.Run(async () =>
             {
-                _ = InitializeAsync();
-            }
-            catch (Exception ex)
-            {
-                _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}");
-                _logger.Error($"InitializeAsync failed: {ex}");
-            }
-
+                try
+                {
+                    await InitializeAsync();
+                    ClearConsole();
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.WriteException("InitializeAsync FAILED", ex);
+                    _terminal.WriteLine($"❌ Критическая ошибка инициализации: {ex.Message}");
+                    // Не выходим, но даём знать пользователю
+                }
+            });
             DebugLogger.Write("=== MainViewModel.CTOR END ===");
         }
 
@@ -214,7 +214,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             catch (Exception ex)
             {
                 DebugLogger.WriteException("InitializeAsync ERROR", ex);
-                throw;
+                _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}");
             }
             DebugLogger.Write("InitializeAsync END");
         }
@@ -229,10 +229,6 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (string.IsNullOrEmpty(ListsPath))
                 {
                     _terminal.WriteLine("⚠️ Папка lists не найдена автоматически. Укажите вручную через меню LISTS.");
-                }
-                else
-                {
-                    _terminal.WriteLine($"✅ Папка lists: {ListsPath}");
                 }
             }
             catch (Exception ex)
@@ -304,16 +300,24 @@ namespace PlatformLauncher.Presentation.ViewModels
         private async Task StartAsync(bool monitorOnly)
         {
             if (SelectedGame == null) return;
-            if (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath))
+
+            // Проверка lists нужна ТОЛЬКО для фикса, не для мониторинга
+            if (!monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
             {
                 _terminal.WriteLine("❌ Папка lists не существует или не выбрана.");
                 return;
             }
 
+            // Для мониторинга без lists - предупреждение
+            if (monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
+            {
+                _terminal.WriteLine("⚠️ Мониторинг без папки lists (только просмотр соединений)");
+            }
+
             _terminal.Clear();
 
             bool warpEnabled = _settingsManager.GetWarpEnabled(SelectedGame.Id);
-            bool filterProcesses = SelectedGame.Id != "monitor";
+            bool filterProcesses = !monitorOnly;
 
             try
             {
@@ -395,32 +399,12 @@ namespace PlatformLauncher.Presentation.ViewModels
         private void ShowProperties()
         {
             if (SelectedGame == null) return;
-            var dialog = _serviceProvider.GetRequiredService<GamePropertiesDialog>();
+            var dialog = new GamePropertiesDialog(SelectedGame, _settingsManager);
             dialog.Owner = Application.Current.MainWindow;
             if (dialog.ShowDialog() == true)
             {
                 _terminal.WriteLine($"✅ Настройки для {SelectedGame.Name} сохранены");
             }
-        }
-
-        private void SelectListsPath()
-        {
-            var dialog = new OpenFolderDialog();
-            dialog.Title = "Выберите папку lists";
-            if (dialog.ShowDialog() == true)
-            {
-                ListsPath = dialog.FolderName;
-                _terminal.WriteLine($"✅ Папка lists выбрана: {ListsPath}");
-                StatusBarText = $"Папка lists: {ListsPath}";
-            }
-        }
-
-        private void OpenListsFolder()
-        {
-            if (!string.IsNullOrEmpty(ListsPath) && Directory.Exists(ListsPath))
-                Process.Start("explorer.exe", ListsPath);
-            else
-                _terminal.WriteLine("❌ Папка lists не существует или не выбрана");
         }
 
         private async Task RunCommandAsync(string command)
@@ -440,7 +424,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                     _terminal.WriteLine("❌ Виртуальное окружение Python не найдено");
                     return;
                 }
-
+                pythonExe = $"\"{pythonExe}\"";
                 string cmd = command;
                 if (cmd.StartsWith("python "))
                     cmd = cmd.Replace("python ", pythonExe + " ");
@@ -484,10 +468,15 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        private void ClearConsole()
+        public void ClearConsole()
         {
             _terminal.Clear();
             _terminal.WriteLine("=== Fix Traffic Pipeline ===");
+            _terminal.WriteLine("\nВыберите игру из списка слева.");
+            _terminal.WriteLine("\n• Запустить фикс — применяет настройки, создаёт бэкап lists");
+            _terminal.WriteLine("\n  Запуск с WARP — в свойствах фикса (ПКМ > Свойства).");
+            _terminal.WriteLine("\n• Мониторинг — только просмотр соединений, без изменения lists");
+            _terminal.WriteLine("\nДля обновления списка игр нажмите «Обновить список»\n");
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

@@ -10,7 +10,7 @@ using System.Windows.Threading;
 
 namespace PlatformLauncher.AppHost
 {
-    public partial class App : System.Windows.Application
+    public partial class App : Application
     {
         public App()
         {

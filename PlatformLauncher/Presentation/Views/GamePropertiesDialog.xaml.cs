@@ -17,9 +17,9 @@ namespace PlatformLauncher.Presentation.Views
             InitializeComponent();
             _settingsManager = settingsManager;
             _preset = preset;
+            WarpEnabled = _settingsManager.GetWarpEnabled(preset.Id);
             GameName = preset.Name;
             DataContext = this;
-            WarpEnabled = _settingsManager.GetWarpEnabled(preset.Id);
         }
 
         private void OkButton_Click(object sender, RoutedEventArgs e)

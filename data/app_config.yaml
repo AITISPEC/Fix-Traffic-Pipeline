@@ -11,13 +11,13 @@ terminal:
   max_domain_width: 12
   color_console: true
   skip_local_ips: true
-  highlight_style: BRIGHT_WHITE
+  highlight_style: GREEN
 monitor: 
 logging:
   level: INFO
   max_file_size: 1048576
   backup_count: 5
-selected_theme: neo-brutalist
+selected_theme: mocha-mousse-dark
 lists:
   ip_file: ipset-all.txt
   domain_file: list-general-user.txt

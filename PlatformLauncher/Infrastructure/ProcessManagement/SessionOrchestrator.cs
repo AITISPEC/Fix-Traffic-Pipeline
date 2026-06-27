@@ -1,9 +1,6 @@
 ﻿using PlatformLauncher.Core.Interfaces;
-using PlatformLauncher.Infrastructure.Lists;
-using PlatformLauncher.Infrastructure.Services;
 using System;
 using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace PlatformLauncher.Infrastructure.ProcessManagement
@@ -20,7 +17,6 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         private string _currentBackupDir;
         private bool _backupRestored;
         private bool _warpStartedByUs;
-        private int _restoreInProgress;
         private string _currentListsPath;
         private bool _sessionEndedRaised;
         private bool _stopRequested = false;
