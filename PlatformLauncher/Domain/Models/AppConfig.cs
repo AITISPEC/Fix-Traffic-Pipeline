@@ -85,5 +85,8 @@ namespace PlatformLauncher.Domain.Models
 
         [YamlMember(Alias = "backup_count")]
         public int BackupCount { get; set; } = 5;
+
+        [YamlMember(Alias = "debug_enabled")]
+        public bool DebugEnabled { get; set; } = false;
     }
 }

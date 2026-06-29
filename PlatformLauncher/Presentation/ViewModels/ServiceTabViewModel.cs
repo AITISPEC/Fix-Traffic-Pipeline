@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using YamlDotNet.Serialization;
 
 namespace PlatformLauncher.Presentation.ViewModels
@@ -31,16 +32,34 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private string _warpStatus = "неизвестен";
         private bool _isWarpConnected;
+        private bool _isThemeChangeAllowed = true;
         private ThemeItem _selectedTheme;
         private string _listsPath;
-        private System.Windows.Threading.DispatcherTimer _warpStatusTimer;
+        private DispatcherTimer _warpStatusTimer;
+        private Visibility _lockVisibility = Visibility.Collapsed;
 
+        public event Action<bool, bool> DebugEnabledChanged;
         public event Action<string> ThemeChanged;
         public event Action<string> ListsPathChanged;
 
         public ObservableCollection<ThemeItem> LightThemes { get; } = new ObservableCollection<ThemeItem>();
         public ObservableCollection<ThemeItem> DarkThemes { get; } = new ObservableCollection<ThemeItem>();
         public IEnumerable<ThemeItem> AllThemes => LightThemes.Concat(DarkThemes);
+        public bool InitialDebugEnabled { get; private set; }
+
+        public bool DebugEnabled
+        {
+            get => _appConfigService.Load().Logging?.DebugEnabled ?? false;
+            set
+            {
+                var config = _appConfigService.Load();
+                if (config.Logging == null) config.Logging = new PlatformLauncher.Domain.Models.LoggingSettings();
+                config.Logging.DebugEnabled = value;
+                _appConfigService.Save(config);
+                OnPropertyChanged();
+                DebugEnabledChanged?.Invoke(value, InitialDebugEnabled);
+            }
+        }
 
         public string ListsPath
         {
@@ -66,12 +85,35 @@ namespace PlatformLauncher.Presentation.ViewModels
             set { _isWarpConnected = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanStartWarp)); OnPropertyChanged(nameof(CanStopWarp)); }
         }
 
+        public bool IsThemeChangeAllowed
+        {
+            get => _isThemeChangeAllowed;
+            set
+            {
+                _isThemeChangeAllowed = value;
+                OnPropertyChanged();
+                LockVisibility = value ? Visibility.Collapsed : Visibility.Visible;
+            }
+        }
+
+        public Visibility LockVisibility
+        {
+            get => _lockVisibility;
+            set { _lockVisibility = value; OnPropertyChanged(); }
+        }
+
         public ThemeItem SelectedTheme
         {
             get => _selectedTheme;
             set
             {
                 if (Equals(_selectedTheme, value)) return;
+                if (!_isThemeChangeAllowed)
+                {
+                    _terminal.WriteLine("⚠️ Смена темы запрещена во время работы фикса/мониторинга");
+                    OnPropertyChanged(nameof(SelectedTheme));
+                    return;
+                }
                 _selectedTheme = value;
                 OnPropertyChanged();
                 if (value != null)
@@ -117,6 +159,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             RunServiceBatCommand = new RelayCommand(_ => RunServiceBat());
 
             LoadThemesFromFolder();
+            InitialDebugEnabled = _appConfigService.Load().Logging?.DebugEnabled ?? false;
             string savedThemeId = _settingsManager.GetTheme()?.Trim();
 
             var savedTheme = AllThemes.FirstOrDefault(t => t.Id.Equals(savedThemeId, StringComparison.OrdinalIgnoreCase));
@@ -156,7 +199,6 @@ namespace PlatformLauncher.Presentation.ViewModels
                     ListsPath = dialog.FolderName;
 
                     _terminal.WriteLine($"✅ Папка lists выбрана: {ListsPath}");
-                    DebugLogger.Write($"✅ Папка lists выбрана: {ListsPath}");
                 }
             }
             catch (Exception ex)
@@ -235,14 +277,13 @@ namespace PlatformLauncher.Presentation.ViewModels
         private void LoadThemesFromFolder()
         {
             string themesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "themes");
-            DebugLogger.Write($"LoadThemesFromFolder: checking {themesFolder}");
 
             LightThemes.Clear();
             DarkThemes.Clear();
 
             if (!Directory.Exists(themesFolder))
             {
-                DebugLogger.Write("Папка data/themes не найдена, загружаем встроенные темы");
+                DebugLogger.Warn("data/themes folder not found, loading built-in themes");
                 LoadBuiltinThemes();
                 return;
             }
@@ -250,18 +291,13 @@ namespace PlatformLauncher.Presentation.ViewModels
             var deserializer = new DeserializerBuilder().Build();
             bool anyLoaded = false;
 
-            // Загружаем из подпапок Dark и Light
             foreach (var subFolder in new[] { "Light", "Dark" })
             {
                 string folderPath = Path.Combine(themesFolder, subFolder);
                 if (!Directory.Exists(folderPath))
-                {
-                    DebugLogger.Write($"Подпапка {subFolder} не найдена");
                     continue;
-                }
 
                 var files = Directory.GetFiles(folderPath, "*.yaml");
-                DebugLogger.Write($"Найдено {files.Length} YAML файлов в {subFolder}");
 
                 foreach (var file in files)
                 {
@@ -272,30 +308,29 @@ namespace PlatformLauncher.Presentation.ViewModels
                         if (theme != null && !string.IsNullOrEmpty(theme.Id))
                         {
                             theme.Id = theme.Id.Trim();
-                            theme.TerminalTheme = subFolder; // принудительно устанавливаем на основе папки
+                            theme.TerminalTheme = subFolder;
                             if (subFolder == "Light")
                                 LightThemes.Add(theme);
                             else
                                 DarkThemes.Add(theme);
                             anyLoaded = true;
-                            DebugLogger.Write($"Загружена тема: {theme.Id} - {theme.DisplayName} ({subFolder})");
                         }
                     }
                     catch (Exception ex)
                     {
-                        DebugLogger.WriteException($"Ошибка загрузки темы из {file}", ex);
+                        DebugLogger.WriteException($"Failed to load theme from {file}", ex);
                     }
                 }
             }
 
             if (!anyLoaded)
             {
-                DebugLogger.Write("Не удалось загрузить ни одной темы, загружаем встроенные");
+                DebugLogger.Warn("No themes loaded from files, using built-in");
                 LoadBuiltinThemes();
             }
             else
             {
-                DebugLogger.Write($"Загружено тем: Light={LightThemes.Count}, Dark={DarkThemes.Count}");
+                DebugLogger.Info($"Themes loaded: Light={LightThemes.Count}, Dark={DarkThemes.Count}");
             }
         }
 
@@ -524,7 +559,10 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (!string.IsNullOrEmpty(output))
                     return output;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Ошибка получения адаптера через PowerShell: {ex.Message}");
+            }
 
             try
             {
@@ -537,7 +575,10 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (!string.IsNullOrEmpty(adapters))
                     return adapters;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Ошибка получения адаптера через NetworkInterface: {ex.Message}");
+            }
 
             return null;
         }

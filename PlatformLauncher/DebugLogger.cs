@@ -7,9 +7,18 @@ namespace PlatformLauncher
     {
         private static readonly string LogFile = "debug.log";
         private static readonly object Lock = new object();
+        private static bool _enabled = false;
+
+        public static void SetEnabled(bool enabled)
+        {
+            _enabled = enabled;
+        }
+
+        public static bool IsEnabled => _enabled;
 
         public static void Write(string message)
         {
+            if (!_enabled) return;
             try
             {
                 lock (Lock)
@@ -22,13 +31,21 @@ namespace PlatformLauncher
 
         public static void WriteException(string prefix, Exception ex)
         {
-            Write($"{prefix}: {ex.GetType().Name} - {ex.Message}");
+            if (!_enabled) return;
+            if (ex == null)
+            {
+                Write($"ERROR: {prefix}: exception is null");
+                return;
+            }
+            Write($"ERROR: {prefix}: {ex.GetType().Name} - {ex.Message}");
+            Write($"  StackTrace: {ex.StackTrace}");
             if (ex.InnerException != null)
-                Write($"Inner: {ex.InnerException.Message}");
+                WriteException("  Inner", ex.InnerException);
         }
 
         public static void Info(string msg) => Write($"INFO: {msg}");
         public static void Warn(string msg) => Write($"WARN: {msg}");
         public static void Error(string msg) => Write($"ERROR: {msg}");
+        public static void Debug(string msg) => Write($"DEBUG: {msg}");
     }
 }

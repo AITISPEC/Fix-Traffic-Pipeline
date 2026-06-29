@@ -41,7 +41,7 @@ namespace PlatformLauncher.Presentation.Services
             if (theme == null) return;
 
             _currentTheme = theme;
-            DebugLogger.Write($"ApplyTheme: {themeId}");
+            DebugLogger.Info($"Theme applied: {themeId}");
 
             try
             {
@@ -51,7 +51,7 @@ namespace PlatformLauncher.Presentation.Services
                 {
                     config.Terminal.Theme = theme.TerminalTheme;
                     appConfigService.Save(config);
-                    DebugLogger.Write($"terminal.theme обновлён на {theme.TerminalTheme}");
+                    DebugLogger.Info($"terminal.theme updated: {theme.TerminalTheme}");
                 }
             }
             catch (Exception ex)
@@ -103,13 +103,46 @@ namespace PlatformLauncher.Presentation.Services
                             window.InvalidateVisual();
                         }));
                 }
+
+                // Принудительное переприменение стилей ContextMenu терминала
+                if (_terminal?.ContextMenu != null)
+                {
+                    _window?.Dispatcher.BeginInvoke(
+                        DispatcherPriority.Background,
+                        new Action(() =>
+                        {
+                            var menu = _terminal.ContextMenu;
+
+                            // Ищем стили в ресурсах терминала (там они определены)
+                            var menuStyle = _terminal.TryFindResource(typeof(ContextMenu)) as Style;
+                            var itemStyle = _terminal.TryFindResource(typeof(MenuItem)) as Style;
+
+                            // Переприменяем стиль самого меню
+                            if (menuStyle != null)
+                            {
+                                menu.Style = null;
+                                menu.Style = menuStyle;
+                            }
+
+                            // Переприменяем стили для каждого MenuItem
+                            foreach (var item in menu.Items.OfType<MenuItem>())
+                            {
+                                if (itemStyle != null)
+                                {
+                                    item.Style = null;
+                                    item.Style = itemStyle;
+                                }
+                            }
+
+                            menu.UpdateLayout();
+                            menu.InvalidateVisual();
+                        }));
+                }
             }
         }
 
         private void ApplyCustomColors(ThemeItem theme)
         {
-            DebugLogger.Write($"ApplyCustomColors START: {theme.Id}");
-
             if (_customColorDict == null)
             {
                 _customColorDict = new ResourceDictionary();
@@ -161,7 +194,7 @@ namespace PlatformLauncher.Presentation.Services
             _customColorDict["PrimaryBrush"] = new SolidColorBrush(accentColor);
             _customColorDict["PrimaryTextBrush"] = new SolidColorBrush(fgColor);
             _customColorDict["SecondaryTextBrush"] = new SolidColorBrush(ctrlFgColor);
-            _customColorDict["ThirdlyTextBrush"] = new SolidColorBrush(ctrlFgColor);
+            _customColorDict["ThirdlyTextBrush"] = new SolidColorBrush(disabledFgColor);
             _customColorDict["TextIconBrush"] = new SolidColorBrush(fgColor);
             _customColorDict["BorderColor"] = borderColor;
             _customColorDict["SecondaryBorderBrush"] = new SolidColorBrush(borderColor);
@@ -186,13 +219,23 @@ namespace PlatformLauncher.Presentation.Services
             _customColorDict["LightPrimaryBrush"] = new SolidColorBrush(bgColor);
             _customColorDict["DarkDefaultBrush"] = new SolidColorBrush(bgColor);
             _customColorDict["DefaultBrush"] = new SolidColorBrush(ctrlBgColor);
+            _customColorDict["MainBackground"] = new SolidColorBrush(bgColor);
+            _customColorDict["MainForeground"] = new SolidColorBrush(fgColor);
+            _customColorDict["ControlBackground"] = new SolidColorBrush(ctrlBgColor);
+            _customColorDict["ControlForeground"] = new SolidColorBrush(ctrlFgColor);
+
+            // Принудительная замена всех возможных ресурсов для disabled
+            Application.Current.Resources["{x:Static SystemColors.GrayTextBrushKey}"] = new SolidColorBrush(disabledFgColor);
+            Application.Current.Resources[SystemColors.GrayTextBrushKey] = new SolidColorBrush(disabledFgColor);
+
+            // Для HandyControl
+            _customColorDict["SecondaryTextBrush"] = new SolidColorBrush(disabledFgColor);
 
             try
             {
                 if (ThemeManager.Current != null)
                 {
                     ThemeManager.Current.AccentColor = new SolidColorBrush(accentColor);
-                    DebugLogger.Write($"AccentColor установлен: {accentColor}");
                 }
             }
             catch (Exception ex)
@@ -256,7 +299,7 @@ namespace PlatformLauncher.Presentation.Services
             var scrollbars = FindVisualChildren<ScrollBar>(_terminal.Terminal);
             if (scrollbars.Count == 0)
             {
-                DebugLogger.Write("ScrollBar NOT FOUND");
+                DebugLogger.Warn("ScrollBar not found in terminal");
                 return;
             }
 
@@ -330,8 +373,6 @@ namespace PlatformLauncher.Presentation.Services
                     }
                 }
             }
-
-            DebugLogger.Write($"ScrollBar styled: BG={scrollBg}, FG={scrollFg}");
         }
 
         private void SetHandyControlThemeManual(string themeName)

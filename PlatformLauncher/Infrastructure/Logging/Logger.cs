@@ -31,7 +31,11 @@ namespace PlatformLauncher.Infrastructure.Logging
                                  .ToList();
             while (files.Count > _maxBackupFiles)
             {
-                try { File.Delete(files[0]); } catch { }
+                try { File.Delete(files[0]); }
+                catch (Exception ex)
+                {
+                    DebugLogger.Warn($"Failed to delete old log {files[0]}: {ex.Message}");
+                }
                 files.RemoveAt(0);
             }
         }
@@ -43,8 +47,10 @@ namespace PlatformLauncher.Infrastructure.Logging
                 lock (_lock)
                 {
                     string path = GetLogFilePath();
-                    string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}";
+                    int threadId = Environment.CurrentManagedThreadId;
+                    string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] [T:{threadId}] {message}";
                     File.AppendAllText(path, line + Environment.NewLine);
+
                     var fi = new FileInfo(path);
                     if (fi.Length > _maxFileSize)
                     {
@@ -54,11 +60,27 @@ namespace PlatformLauncher.Infrastructure.Logging
                     RotateLogs();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DebugLogger.Error($"Logger.WriteLog failed: {ex.Message}");
+            }
         }
 
         public void Info(string message) => WriteLog("INFO", message);
         public void Warning(string message) => WriteLog("WARN", message);
         public void Error(string message) => WriteLog("ERROR", message);
+
+        public void Error(string message, Exception ex)
+        {
+            if (ex == null)
+            {
+                WriteLog("ERROR", $"{message}: exception is null");
+                return;
+            }
+            WriteLog("ERROR", $"{message}: {ex.GetType().Name} - {ex.Message}");
+            WriteLog("ERROR", $"  StackTrace: {ex.StackTrace}");
+            if (ex.InnerException != null)
+                Error("  Inner", ex.InnerException);
+        }
     }
 }

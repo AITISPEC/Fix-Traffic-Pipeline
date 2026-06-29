@@ -104,6 +104,36 @@ namespace PlatformLauncher.Infrastructure.Services
             Save();
         }
 
+        public (bool Installed, bool NotInstalled, bool Custom) GetFilterState()
+        {
+            return (
+                GetBoolSetting("FilterInstalled"),
+                GetBoolSetting("FilterNotInstalled"),
+                GetBoolSetting("FilterCustom")
+            );
+        }
+
+        public void SetFilterState(bool installed, bool notInstalled, bool custom)
+        {
+            _settings["FilterInstalled"] = installed;
+            _settings["FilterNotInstalled"] = notInstalled;
+            _settings["FilterCustom"] = custom;
+            Save();
+        }
+
+        private bool GetBoolSetting(string key)
+        {
+            if (!_settings.TryGetValue(key, out object value))
+                return false;
+
+            if (value is System.Text.Json.JsonElement element)
+            {
+                if (element.ValueKind == System.Text.Json.JsonValueKind.True) return true;
+                if (element.ValueKind == System.Text.Json.JsonValueKind.False) return false;
+            }
+            return value is bool b && b;
+        }
+
         public string GetTheme()
         {
             var config = _appConfigService.Load();

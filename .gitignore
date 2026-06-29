@@ -82,3 +82,4 @@ MANIFEST
 .env
 *.local
 *.bat
+dump/

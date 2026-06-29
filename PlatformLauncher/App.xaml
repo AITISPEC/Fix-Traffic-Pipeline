@@ -1,7 +1,8 @@
 ﻿<Application x:Class="PlatformLauncher.AppHost.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:hc="https://handyorg.github.io/handycontrol">
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:diagnostics="clr-namespace:System.Diagnostics;assembly=WindowsBase">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -28,6 +29,8 @@
             <SolidColorBrush x:Key="InputForeground" Color="#CDD6F4"/>
             <SolidColorBrush x:Key="InputBorderBrush" Color="#CDD6F4"/>
             <SolidColorBrush x:Key="SeparatorBrush" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="DisabledForeground" Color="#CDD6F4"/>
+
 
             <!-- Implicit styles для всех WPF контролов --> 
             <Style TargetType="Button">
@@ -92,8 +95,58 @@
                 <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
             </Style>
 
-            <Style TargetType="MenuItem">
+            <Style TargetType="MenuItem" BasedOn="{x:Null}">
+                <Setter Property="OverridesDefaultStyle" Value="True"/>
                 <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
+                <Setter Property="Padding" Value="10,5"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="Bd" 
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        Background="{TemplateBinding Background}" 
+                        SnapsToDevicePixels="True"
+                        Padding="{TemplateBinding Padding}">
+                                <Grid x:Name="Grid" Margin="{TemplateBinding Padding}">
+                                    <Grid.ColumnDefinitions>
+                                        <!-- УБРАНА ПЕРВАЯ КОЛОНКА Width="26" -->
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="30" />
+                                        <ColumnDefinition SharedSizeGroup="MenuItemIGTColumnGroup" Width="Auto" />
+                                        <ColumnDefinition Width="20" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <ContentPresenter x:Name="ContentPresenter" 
+                                          ContentStringFormat="{TemplateBinding HeaderStringFormat}"
+                                          ContentTemplate="{TemplateBinding HeaderTemplate}" 
+                                          Grid.Column="0"
+                                          ContentSource="Header" 
+                                          RecognizesAccessKey="True"
+                                          SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+
+                                    <TextBlock x:Name="GestureText" 
+                                   Grid.Column="2" 
+                                   Margin="10,0,0,0"
+                                   Text="{TemplateBinding InputGestureText}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   VerticalAlignment="Center"
+                                   Opacity="0.7"/>
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledForeground}"/>
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource DisabledForeground}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style TargetType="ContextMenu">

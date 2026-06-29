@@ -114,7 +114,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             if (!string.IsNullOrEmpty(_listsPath))
             {
                 var flagPath = Path.Combine(_listsPath, ".stop_monitor");
-                try { File.WriteAllText(flagPath, "stop"); } catch { }
+                try { File.WriteAllText(flagPath, "stop"); }
+                catch (Exception ex) { _logger.Warning($"Не удалось создать флаг остановки: {ex.Message}"); }
             }
 
             try
@@ -133,15 +134,17 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             }
             catch (Exception ex)
             {
-                _logger.Error($"Ошибка при остановке Python: {ex}");
-                try { _process.Kill(); } catch { }
+                _logger.Error($"Ошибка при остановке Python", ex);
+                try { _process.Kill(); }
+                catch (Exception killEx) { _logger.Warning($"Не удалось принудительно завершить Python: {killEx.Message}"); }
             }
             finally
             {
                 if (!string.IsNullOrEmpty(_listsPath))
                 {
                     var flagPath = Path.Combine(_listsPath, ".stop_monitor");
-                    try { if (File.Exists(flagPath)) File.Delete(flagPath); } catch { }
+                    try { if (File.Exists(flagPath)) File.Delete(flagPath); }
+                    catch (Exception ex) { _logger.Warning($"Не удалось удалить флаг остановки: {ex.Message}"); }
                 }
                 _process?.Dispose();
                 _process = null;

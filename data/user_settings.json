@@ -1,5 +1,8 @@
 {
   "WarpEnabled_roblox": false,
-  "WarpEnabled_hunt": true,
-  "WarpEnabled_monitor": true
+  "WarpEnabled_hunt": false,
+  "WarpEnabled_monitor": false,
+  "FilterInstalled": false,
+  "FilterNotInstalled": false,
+  "FilterCustom": false
 }

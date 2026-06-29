@@ -34,8 +34,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 await p.WaitForExitAsync();
                 return p.ExitCode == 0;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"WARP не установлен или недоступен: {ex.Message}");
                 return false;
             }
         }
@@ -91,8 +92,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 await Task.Delay(5000);
                 return p.ExitCode == 0;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"Ошибка установки фикса: {ex.Message}");
                 return false;
             }
         }
@@ -111,8 +113,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 await p.WaitForExitAsync();
                 return p.ExitCode == 0;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"Ошибка установки WARP протокола: {ex.Message}");
                 return false;
             }
         }
@@ -131,8 +134,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 await p.WaitForExitAsync();
                 return p.ExitCode == 0;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"Ошибка запуска WARP: {ex.Message}");
                 return false;
             }
         }
@@ -151,8 +155,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 await p.WaitForExitAsync();
                 return p.ExitCode == 0;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"Ошибка остановки WARP: {ex.Message}");
                 return false;
             }
         }
@@ -192,8 +197,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 await p.WaitForExitAsync();
                 return output.Contains("Connected") ? "connected" : "disconnected";
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Warning($"Ошибка проверки статуса WARP: {ex.Message}");
                 return "disconnected";
             }
         }

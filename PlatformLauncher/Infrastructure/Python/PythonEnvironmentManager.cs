@@ -165,7 +165,11 @@ namespace PlatformLauncher.Infrastructure.Python
                     return "python";
                 return null;
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Ошибка проверки системного Python: {ex.Message}");
+                return null;
+            }
         }
 
         private async Task<int> RunProcessAsync(string fileName, string arguments, IProgress<string> progress)

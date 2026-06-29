@@ -70,6 +70,17 @@ namespace PlatformLauncher.Presentation.Views
             ServiceTabControl.SetViewModel(_serviceTabViewModel);
             SettingsTabControl.SetViewModel(_serviceTabViewModel);
             _sessionOrchestrator = _serviceProvider.GetRequiredService<ISessionOrchestrator>();
+            if (viewModel != null)
+            {
+                viewModel.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(MainViewModel.ListsPath))
+                        _serviceTabViewModel.ListsPath = viewModel.ListsPath;
+                    if (e.PropertyName == nameof(MainViewModel.IsRunning))
+                        _serviceTabViewModel.IsThemeChangeAllowed = !viewModel.IsRunning;
+                };
+                _serviceTabViewModel.IsThemeChangeAllowed = !viewModel.IsRunning;
+            }
             _sessionOrchestrator.SetAskUserCallback(AskUserToSaveBackup);
             _serviceTabViewModel.ListsPath = (DataContext as MainViewModel)?.ListsPath;
             _terminal = terminal;
@@ -114,6 +125,7 @@ namespace PlatformLauncher.Presentation.Views
                 _serviceTabViewModel.SelectedTheme = themeToApply;
                 _themeApplier.ApplyTheme(themeToApply.Id, _serviceTabViewModel.AllThemes);
             }
+            UpdateClearButtonVisibility();
             viewModel.ClearConsole();
         }
 
@@ -218,6 +230,128 @@ namespace PlatformLauncher.Presentation.Views
             });
         }
 
+        private void ListBox_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is System.Windows.Controls.ListBox listBox)
+            {
+                var listBoxItem = FindVisualParent<System.Windows.Controls.ListBoxItem>(e.OriginalSource as DependencyObject);
+                if (listBoxItem == null)
+                {
+                    listBox.SelectedItem = null;
+
+                    // Убираем фокус из TextBox поиска при клике по пустому месту
+                    Keyboard.ClearFocus();
+                    FocusManager.SetFocusedElement(FocusManager.GetFocusScope(listBox), null);
+                }
+            }
+        }
+
+        private void ListBox_PreviewMouseRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is System.Windows.Controls.ListBox listBox)
+            {
+                var listBoxItem = FindVisualParent<System.Windows.Controls.ListBoxItem>(e.OriginalSource as DependencyObject);
+                if (listBoxItem != null)
+                {
+                    // Выделяем элемент, чтобы SelectedGame обновился перед открытием меню
+                    listBoxItem.IsSelected = true;
+                }
+                else
+                {
+                    // Клик по пустому месту - снимаем выделение
+                    listBox.SelectedItem = null;
+                }
+            }
+        }
+
+        private void SearchTextBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            SearchPlaceholder.Visibility = Visibility.Collapsed;
+        }
+
+        private void SearchTextBox_LostFocus(object sender, RoutedEventArgs e)
+        {
+            UpdatePlaceholderVisibility();
+        }
+
+        private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // Обрезка при вставке из буфера (MaxLength не всегда срабатывает при Paste)
+            if (SearchTextBox.Text.Length > 16)
+            {
+                int caretIndex = SearchTextBox.CaretIndex;
+                SearchTextBox.Text = SearchTextBox.Text.Substring(0, 16);
+                SearchTextBox.CaretIndex = Math.Min(caretIndex, 16);
+                // Рекурсивный вызов TextChanged безопасен — длина уже <= 16
+            }
+
+            UpdatePlaceholderVisibility();
+            UpdateClearButtonVisibility();
+        }
+
+        private void ClearSearchButton_Click(object sender, RoutedEventArgs e)
+        {
+            SearchTextBox.Text = string.Empty;
+            SearchTextBox.Focus();
+        }
+
+        private void UpdateClearButtonVisibility()
+        {
+            ClearSearchButton.Visibility = string.IsNullOrEmpty(SearchTextBox.Text)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        private void UpdatePlaceholderVisibility()
+        {
+            if (string.IsNullOrEmpty(SearchTextBox.Text) && !SearchTextBox.IsKeyboardFocusWithin)
+            {
+                SearchPlaceholder.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                SearchPlaceholder.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject current = System.Windows.Media.VisualTreeHelper.GetParent(child);
+            while (current != null)
+            {
+                if (current is T found)
+                    return found;
+                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+            }
+            return null;
+        }
+
+        private void RootGrid_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (FiltersExpander == null || !FiltersExpander.IsExpanded)
+                return;
+
+            // Проверяем, был ли клик внутри Expander с фильтрами
+            var source = e.OriginalSource as DependencyObject;
+            if (source != null && IsChildOf(source, FiltersExpander))
+                return; // Клик внутри фильтров — не сворачиваем
+
+            // Клик вне фильтров — сворачиваем
+            FiltersExpander.IsExpanded = false;
+        }
+
+        private bool IsChildOf(DependencyObject child, DependencyObject parent)
+        {
+            DependencyObject current = child;
+            while (current != null)
+            {
+                if (current == parent)
+                    return true;
+                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+            }
+            return false;
+        }
+
         protected override void OnClosing(CancelEventArgs e)
         {
             e.Cancel = true;
@@ -231,7 +365,8 @@ namespace PlatformLauncher.Presentation.Views
         {
             if (_sessionOrchestrator.IsRunning)
             {
-                try { await _sessionOrchestrator.StopAsync(); } catch { }
+                try { await _sessionOrchestrator.StopAsync(); }
+                catch (Exception ex) { DebugLogger.WriteException("StopAsync on exit failed", ex); }
             }
             TrayIcon.Dispose();
             UnhookTerminalRightClick();

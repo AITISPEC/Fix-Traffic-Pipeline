@@ -28,13 +28,13 @@ dns_ignore_statuses:
 console_output_statuses:
   - "SYN_SENT"
   - "ESTABLISHED"
-  - "TIME_WAIT"
+  - "CLOSE"
 
 # Статусы, которые НЕ показывать в консоли (игнорировать)
 console_ignore_statuses:
   - "SYN_RECV"
   - "NONE"
-  - "CLOSE"
+  - "TIME_WAIT"
   - "CLOSING"
   - "FIN_WAIT1"
   - "FIN_WAIT2"

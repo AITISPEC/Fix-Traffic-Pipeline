@@ -6,6 +6,7 @@ using PlatformLauncher.Domain.Models;
 using PlatformLauncher.Presentation.Commands;
 using PlatformLauncher.Presentation.Views;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -19,6 +20,12 @@ using System.Windows.Input;
 
 namespace PlatformLauncher.Presentation.ViewModels
 {
+    public class SortOption
+    {
+        public string Id { get; set; }
+        public string DisplayName { get; set; }
+    }
+
     public class MainViewModel : INotifyPropertyChanged
     {
         private readonly IUpdateService _updateService;
@@ -42,8 +49,12 @@ namespace PlatformLauncher.Presentation.ViewModels
         private bool _isRunning;
         private string _statusText = "Готов";
         private string _statusBarText = "Загрузка пресетов...";
-        private bool _showOnlyInstalled;
-        private bool _showOnlyLocal;
+        private string _filterHeader = "Фильтры";
+        private bool _filterInstalled;
+        private bool _filterNotInstalled;
+        private bool _filterCustom;
+        private string _searchText = string.Empty;
+        private SortOption _selectedSortOption;
 
         public ObservableCollection<GamePreset> Games
         {
@@ -92,16 +103,90 @@ namespace PlatformLauncher.Presentation.ViewModels
             set { _statusBarText = value; OnPropertyChanged(); }
         }
 
-        public bool ShowOnlyInstalled
+        public string FilterHeader
         {
-            get => _showOnlyInstalled;
-            set { _showOnlyInstalled = value; OnPropertyChanged(); ApplyFilters(); }
+            get => _filterHeader;
+            set { _filterHeader = value; OnPropertyChanged(); }
         }
 
-        public bool ShowOnlyLocal
+        public bool FilterInstalled
         {
-            get => _showOnlyLocal;
-            set { _showOnlyLocal = value; OnPropertyChanged(); ApplyFilters(); }
+            get => _filterInstalled;
+            set
+            {
+                if (_filterInstalled == value) return;
+                _filterInstalled = value;
+                if (value && _filterNotInstalled)
+                {
+                    _filterNotInstalled = false;
+                    OnPropertyChanged(nameof(FilterNotInstalled));
+                }
+                OnPropertyChanged();
+                _settingsManager.SetFilterState(_filterInstalled, _filterNotInstalled, _filterCustom);
+                ApplyFilters();
+            }
+        }
+
+        public bool FilterNotInstalled
+        {
+            get => _filterNotInstalled;
+            set
+            {
+                if (_filterNotInstalled == value) return;
+                _filterNotInstalled = value;
+                if (value && _filterInstalled)
+                {
+                    _filterInstalled = false;
+                    OnPropertyChanged(nameof(FilterInstalled));
+                }
+                OnPropertyChanged();
+                _settingsManager.SetFilterState(_filterInstalled, _filterNotInstalled, _filterCustom);
+                ApplyFilters();
+            }
+        }
+
+        public bool FilterCustom
+        {
+            get => _filterCustom;
+            set
+            {
+                if (_filterCustom == value) return;
+                _filterCustom = value;
+                OnPropertyChanged();
+                _settingsManager.SetFilterState(_filterInstalled, _filterNotInstalled, _filterCustom);
+                ApplyFilters();
+            }
+        }
+
+        public string SearchText
+        {
+            get => _searchText;
+            set
+            {
+                if (_searchText == value) return;
+                _searchText = value;
+                OnPropertyChanged();
+                ApplyFilters();
+            }
+        }
+
+        public List<SortOption> SortOptions { get; } = new List<SortOption>
+            {
+                new SortOption { Id = "installed_first", DisplayName = "Установленные" },
+                new SortOption { Id = "alphabetical", DisplayName = "По алфавиту" },
+                new SortOption { Id = "not_installed", DisplayName = "Не установленные" }
+            };
+
+        public SortOption SelectedSortOption
+        {
+            get => _selectedSortOption;
+            set
+            {
+                if (_selectedSortOption == value) return;
+                _selectedSortOption = value;
+                OnPropertyChanged();
+                ApplyFilters();
+            }
         }
 
         public string StartButtonText => SelectedGame != null && !SelectedGame.Installed ? "Установить" : "Запустить фикс";
@@ -113,13 +198,13 @@ namespace PlatformLauncher.Presentation.ViewModels
         public bool CanUninstall => SelectedGame != null && SelectedGame.Installed && SelectedGame.Id != "monitor";
 
         public ICommand RefreshPresetsCommand { get; }
+        public ICommand ResetFiltersCommand { get; }
         public ICommand StartCommand { get; }
         public ICommand MonitorCommand { get; }
         public ICommand StopCommand { get; }
         public ICommand InstallCommand { get; }
         public ICommand UninstallCommand { get; }
         public ICommand PropertiesCommand { get; }
-        public ICommand FilterCommand { get; }
         public ICommand RunCommandCommand { get; }
         public ICommand ClearConsoleCommand { get; }
         public ICommand ShowWindowCommand { get; }
@@ -139,8 +224,6 @@ namespace PlatformLauncher.Presentation.ViewModels
             ISessionOrchestrator sessionOrchestrator,
             IServiceProvider serviceProvider)
         {
-            DebugLogger.Write("=== MainViewModel.CTOR START ===");
-
             _updateService = updateService;
             _settingsManager = settingsManager;
             _installGameUseCase = installGameUseCase;
@@ -156,20 +239,21 @@ namespace PlatformLauncher.Presentation.ViewModels
             _sessionOrchestrator = sessionOrchestrator;
             _sessionOrchestrator.OutputReceived += msg => _terminal.WriteLine(msg);
             _sessionOrchestrator.SessionEnded += OnSessionEnded;
+            // Устанавливаем сортировку по умолчанию
+            _selectedSortOption = SortOptions[0]; // "сначала установленные"
+            OnPropertyChanged(nameof(SelectedSortOption));
 
             RefreshPresetsCommand = new RelayCommand(async _ => await RefreshPresetsAsync(), _ => true);
+            ResetFiltersCommand = new RelayCommand(_ => ResetFilters());
             StartCommand = new RelayCommand(async _ => await StartAsync(false), _ => CanStart);
             MonitorCommand = new RelayCommand(async _ => await StartAsync(true), _ => CanMonitor);
             StopCommand = new RelayCommand(async _ => await StopAsync(), _ => CanStop);
             InstallCommand = new RelayCommand(async _ => await InstallAsync(), _ => CanInstall);
             UninstallCommand = new RelayCommand(async _ => await UninstallAsync(), _ => CanUninstall);
             PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => SelectedGame != null);
-            FilterCommand = new RelayCommand(_ => ApplyFilters());
             RunCommandCommand = new RelayCommand(async param => await RunCommandAsync(param?.ToString()));
             ClearConsoleCommand = new RelayCommand(_ => ClearConsole());
             ShowWindowCommand = new RelayCommand(_ => ShowWindow());
-
-            DebugLogger.Write("Commands initialized, calling InitializeAsync");
 
             _ = Task.Run(async () =>
             {
@@ -180,12 +264,10 @@ namespace PlatformLauncher.Presentation.ViewModels
                 }
                 catch (Exception ex)
                 {
-                    DebugLogger.WriteException("InitializeAsync FAILED", ex);
+                    DebugLogger.WriteException("InitializeAsync failed", ex);
                     _terminal.WriteLine($"❌ Критическая ошибка инициализации: {ex.Message}");
-                    // Не выходим, но даём знать пользователю
                 }
             });
-            DebugLogger.Write("=== MainViewModel.CTOR END ===");
         }
 
         private void ShowWindow()
@@ -204,33 +286,33 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private async Task InitializeAsync()
         {
-            DebugLogger.Write("InitializeAsync START");
             try
             {
                 IsAdministrator = IsCurrentUserAdministrator();
-                DebugLogger.Write("IsAdministrator set");
                 await FindListsPathAsync();
-                DebugLogger.Write("FindListsPathAsync done");
+                // Восстанавливаем сохранённые фильтры
+                var (installed, notInstalled, custom) = _settingsManager.GetFilterState();
+                _filterInstalled = installed;
+                _filterNotInstalled = notInstalled;
+                _filterCustom = custom;
+                OnPropertyChanged(nameof(FilterInstalled));
+                OnPropertyChanged(nameof(FilterNotInstalled));
+                OnPropertyChanged(nameof(FilterCustom));
                 LoadGames();
-                DebugLogger.Write("LoadGames done");
                 StatusBarText = $"Загружено пресетов: {Games.Count}";
-                DebugLogger.Write("StatusBarText updated");
             }
             catch (Exception ex)
             {
-                DebugLogger.WriteException("InitializeAsync ERROR", ex);
+                DebugLogger.WriteException("InitializeAsync error", ex);
                 _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}");
             }
-            DebugLogger.Write("InitializeAsync END");
         }
 
         private async Task FindListsPathAsync()
         {
-            DebugLogger.Write("FindListsPathAsync START");
             try
             {
                 ListsPath = await _winwsLocator.FindListsPathAsync();
-                DebugLogger.Write($"ListsPath = {ListsPath ?? "null"}");
                 if (string.IsNullOrEmpty(ListsPath))
                 {
                     _terminal.WriteLine("⚠️ Папка lists не найдена автоматически. Укажите вручную через меню LISTS.");
@@ -238,10 +320,9 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
             catch (Exception ex)
             {
-                DebugLogger.WriteException("FindListsPathAsync ERROR", ex);
+                DebugLogger.WriteException("FindListsPathAsync failed", ex);
                 throw;
             }
-            DebugLogger.Write("FindListsPathAsync END");
         }
 
         private void LoadGames()
@@ -255,15 +336,51 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private void ApplyFilters()
         {
-            var filtered = _updateService.LoadPresets()
-                .Where(p => (!ShowOnlyInstalled || p.Installed) &&
-                            (!ShowOnlyLocal || IsLocal(p.Id)))
-                .OrderBy(p => p.Installed ? 0 : 1)
-                .ThenBy(p => p.Name)
-                .ToList();
+            var allPresets = _updateService.LoadPresets();
+            var filtered = allPresets.AsEnumerable();
+
+            // Фильтр по поиску
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                string search = SearchText.ToLower();
+                filtered = filtered.Where(p => p.Name.ToLower().Contains(search) ||
+                                               p.Id.ToLower().Contains(search));
+            }
+
+            // Фильтр по статусу установки (взаимоисключающие)
+            if (FilterInstalled)
+                filtered = filtered.Where(p => p.Installed);
+            else if (FilterNotInstalled)
+                filtered = filtered.Where(p => !p.Installed);
+
+            // Фильтр "Пользовательские" (локальные)
+            if (FilterCustom)
+                filtered = filtered.Where(p => IsLocal(p.Id));
+
+            // Сортировка
+            var list = _selectedSortOption?.Id switch
+            {
+                "alphabetical" => filtered.OrderBy(p => p.Name).ToList(),
+                "not_installed" => filtered
+                    .OrderBy(p => p.Installed ? 1 : 0)
+                    .ThenBy(p => p.Name)
+                    .ToList(),
+                _ => filtered // installed_first (по умолчанию)
+                    .OrderBy(p => p.Installed ? 0 : 1)
+                    .ThenBy(p => p.Name)
+                    .ToList()
+            };
+
             Games.Clear();
-            foreach (var p in filtered)
+            foreach (var p in list)
                 Games.Add(p);
+
+            // Обновляем заголовок Expander
+            int total = allPresets.Count;
+            int shown = Games.Count;
+            FilterHeader = shown == total
+                ? $"Фильтры ({shown})"
+                : $"Фильтры (показано {shown} из {total})";
         }
 
         private bool IsLocal(string gameId)
@@ -455,7 +572,8 @@ namespace PlatformLauncher.Presentation.ViewModels
 
                 if (await Task.WhenAny(exitTask, Task.Delay(30000)) != exitTask)
                 {
-                    try { proc.Kill(); } catch { }
+                    try { proc.Kill(); }
+                    catch (Exception ex) { _logger.Warning($"Не удалось принудительно завершить команду: {ex.Message}"); }
                     _terminal.WriteLine("⚠️ Команда превысила время выполнения (30 сек), принудительно завершена");
                     return;
                 }
@@ -473,6 +591,12 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
+        private void ResetFilters()
+        {
+            FilterInstalled = false;
+            FilterNotInstalled = false;
+            FilterCustom = false;
+        }
         public void ClearConsole()
         {
             _terminal.Clear();

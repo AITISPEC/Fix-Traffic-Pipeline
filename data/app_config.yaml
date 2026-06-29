@@ -17,7 +17,8 @@ logging:
   level: INFO
   max_file_size: 1048576
   backup_count: 5
-selected_theme: cyberpunk-dark
+  debug_enabled: false
+selected_theme: apex-dark
 lists:
   ip_file: ipset-all.txt
   domain_file: list-general-user.txt

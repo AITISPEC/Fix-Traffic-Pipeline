@@ -127,6 +127,12 @@ class NetworkMonitor:
 
 		self.executor = BoundedThreadPool(max_workers=64, max_queue_size=128)
 
+		self.output_handler = None
+		if game_name == "monitor":
+			from .output_handler import OutputHandler
+
+			self.output_handler = OutputHandler(logs_dir="logs/Monitor")
+
 		# Правила для списков – из effective_config
 		self.list_rules = self.config.get("list_rules", {})
 		if not self.list_rules:
@@ -222,6 +228,19 @@ class NetworkMonitor:
 		)
 		with self.print_lock:
 			print(formatted)
+
+			if self.output_handler:
+				self.output_handler.add_connection(
+					proc_name,
+					remote_ip,
+					domain,
+					time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())),
+					remote_port,
+					conn["pid"],
+					conn["laddr_ip"],
+					conn["laddr_port"],
+					status,
+				)
 			sys.stdout.flush()
 
 	def run(self):
@@ -299,6 +318,9 @@ class NetworkMonitor:
 			if not self.monitor_only:
 				self.list_manager.flush_buffers()
 				self.list_manager.shutdown()
+			if self.output_handler:
+				self.output_handler.flush()
+				self.output_handler.rebuild_files_by_status()
 			self.dns.shutdown()
 			self.executor.shutdown(wait=True)
 			logger.info("Мониторинг остановлен.")

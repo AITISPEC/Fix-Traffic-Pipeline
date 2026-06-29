@@ -1,0 +1,31 @@
+<Window x:Class="PlatformLauncher.Presentation.Views.DebugRestartDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Дебаггер" Height="150" Width="350"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource MainBackground}"
+        Foreground="{DynamicResource MainForeground}">
+	<Grid Margin="15" Background="{DynamicResource ControlBackground}">
+		<Grid.RowDefinitions>
+			<RowDefinition Height="*"/>
+			<RowDefinition Height="Auto"/>
+		</Grid.RowDefinitions>
+		<TextBlock x:Name="MessageText"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource MainForeground}"/>
+		<StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+			<Button Content="Ок" Width="80" Margin="0,0,10,0" Click="OkButton_Click"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="{DynamicResource ControlForeground}"
+                    BorderBrush="{DynamicResource BorderBrush}"/>
+			<Button Content="Перезапустить сейчас" Width="150" Click="RestartButton_Click"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="{DynamicResource ControlForeground}"
+                    BorderBrush="{DynamicResource BorderBrush}"/>
+		</StackPanel>
+	</Grid>
+</Window>

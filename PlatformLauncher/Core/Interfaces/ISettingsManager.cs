@@ -6,5 +6,8 @@
         void SetWarpEnabled(string gameId, bool enabled);
         string GetTheme();
         void SetTheme(string themeId);
+        // Фильтры
+        (bool Installed, bool NotInstalled, bool Custom) GetFilterState();
+        void SetFilterState(bool installed, bool notInstalled, bool custom);
     }
 }

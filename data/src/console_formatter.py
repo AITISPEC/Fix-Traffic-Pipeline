@@ -26,41 +26,40 @@ class Style:
 	RESET_ALL = "\033[0m"
 
 
-# Цветовые схемы для тем
-COLOR_SCHEMES = {
+STATUS_COLORS = {
 	"Dark": {
-		"SYN_SENT": Fore.YELLOW,
-		"SYN_RECV": Fore.LIGHTYELLOW_EX,
-		"ESTABLISHED": Fore.GREEN,
-		"TIME_WAIT": Fore.MAGENTA,
-		"CLOSE_WAIT": Fore.RED,
-		"FIN_WAIT1": Fore.RED,
-		"FIN_WAIT2": Fore.RED,
-		"LAST_ACK": Fore.RED,
-		"CLOSING": Fore.RED,
-		"LISTEN": Fore.CYAN,
-		"NONE": Fore.LIGHTCYAN_EX,
-		"default": Fore.CYAN,
-		"domain_resolved": Fore.WHITE,
-		"domain_unknown": Fore.LIGHTBLACK_EX,
-		"highlight": Fore.LIGHTWHITE_EX,
+		"SYN_SENT": (255, 255, 0),
+		"SYN_RECV": (255, 200, 0),
+		"ESTABLISHED": (0, 255, 0),
+		"TIME_WAIT": (255, 0, 255),
+		"CLOSE_WAIT": (255, 0, 0),
+		"FIN_WAIT1": (255, 0, 0),
+		"FIN_WAIT2": (255, 0, 0),
+		"LAST_ACK": (255, 0, 0),
+		"CLOSING": (255, 0, 0),
+		"LISTEN": (0, 255, 255),
+		"NONE": (0, 200, 255),
+		"default": (0, 255, 255),
+		"domain_resolved": (255, 255, 255),
+		"domain_unknown": (150, 150, 150),
+		"highlight": (255, 255, 200),
 	},
 	"Light": {
-		"SYN_SENT": Fore.LIGHTYELLOW_EX,
-		"SYN_RECV": Fore.YELLOW,
-		"ESTABLISHED": Fore.LIGHTGREEN_EX,
-		"TIME_WAIT": Fore.LIGHTMAGENTA_EX,
-		"CLOSE_WAIT": Fore.LIGHTRED_EX,
-		"FIN_WAIT1": Fore.LIGHTRED_EX,
-		"FIN_WAIT2": Fore.LIGHTRED_EX,
-		"LAST_ACK": Fore.LIGHTRED_EX,
-		"CLOSING": Fore.LIGHTRED_EX,
-		"LISTEN": Fore.LIGHTCYAN_EX,
-		"NONE": Fore.CYAN,
-		"default": Fore.BLUE,
-		"domain_resolved": Fore.BLACK,
-		"domain_unknown": Fore.LIGHTBLACK_EX,
-		"highlight": Fore.LIGHTBLUE_EX,
+		"SYN_SENT": (200, 150, 0),
+		"SYN_RECV": (200, 100, 0),
+		"ESTABLISHED": (0, 150, 0),
+		"TIME_WAIT": (150, 0, 150),
+		"CLOSE_WAIT": (200, 0, 0),
+		"FIN_WAIT1": (200, 0, 0),
+		"FIN_WAIT2": (200, 0, 0),
+		"LAST_ACK": (200, 0, 0),
+		"CLOSING": (200, 0, 0),
+		"LISTEN": (0, 150, 150),
+		"NONE": (0, 100, 200),
+		"default": (0, 100, 200),
+		"domain_resolved": (0, 0, 0),
+		"domain_unknown": (100, 100, 100),
+		"highlight": (100, 0, 200),
 	},
 }
 
@@ -120,6 +119,10 @@ def parse_style(style_str):
 	return attr, color
 
 
+def _rgb_ansi(rgb):
+	return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
 def format_connection(
 	proc_name,
 	remote_ip,
@@ -139,37 +142,38 @@ def format_connection(
 	max_port_width = console_cfg.get("max_port_width", 6)
 	max_domain_width = console_cfg.get("max_domain_width", 50)
 
-	count_badge = f"x{count} " if count > 1 else "   "
+	count_badge = f"x{count}  " if count > 1 else "    "
 	proc_display = proc_name[:max_proc_width].ljust(max_proc_width)
 	ip_display = remote_ip[:max_ip_width].ljust(max_ip_width)
 	port_display = str(remote_port)[:max_port_width].rjust(max_port_width)
-	main_part = f"{proc_display} -> {ip_display} :{port_display}"
+	main_part = f"{proc_display} -> {ip_display} :{port_display} "
 	domain_display = domain[:max_domain_width]
 
 	icon = STATUS_ICONS.get(status, DEFAULT_ICON)
-	scheme = COLOR_SCHEMES.get(theme, COLOR_SCHEMES["Dark"])
+	scheme = STATUS_COLORS.get(theme, STATUS_COLORS["Dark"])
 
 	if color_enabled:
-		status_color = scheme.get(status, scheme["default"])
+		status_color = _rgb_ansi(scheme.get(status, scheme["default"]))
 		colored_main = status_color + main_part + Style.RESET_ALL
 
-		if domain == "Домен не определён" or domain == "—":
-			domain_display = scheme["domain_unknown"] + domain_display + Style.RESET_ALL
+		if domain in ("Домен не определён", "—"):
+			domain_display = (
+				_rgb_ansi(scheme["domain_unknown"]) + domain_display + Style.RESET_ALL
+			)
 		else:
 			domain_display = (
-				scheme["domain_resolved"] + domain_display + Style.RESET_ALL
+				_rgb_ansi(scheme["domain_resolved"]) + domain_display + Style.RESET_ALL
 			)
 
 		if highlight:
-			attr = highlight_attr or ""
-			color = highlight_color or scheme["highlight"]
-			highlighted_proc = attr + color + proc_name + Style.RESET_ALL
+			hl_color = _rgb_ansi(scheme["highlight"])
+			highlighted_proc = hl_color + proc_name + Style.RESET_ALL
 			colored_main = colored_main.replace(proc_name, highlighted_proc, 1)
 
-		return f"{icon}{count_badge} {colored_main} ({domain_display})"
+		return f"{icon}{count_badge} {colored_main} ({domain_display}) "
 	else:
 		if highlight:
 			main_plain = main_part.replace(proc_name, f"[{proc_name}]", 1)
 		else:
 			main_plain = main_part
-		return f"{icon}{count_badge} {main_plain} ({domain_display})"
+		return f"{icon}{count_badge} {main_plain} ({domain_display}) "

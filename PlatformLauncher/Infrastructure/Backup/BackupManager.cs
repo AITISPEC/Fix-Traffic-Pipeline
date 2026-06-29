@@ -134,7 +134,11 @@ namespace PlatformLauncher.Infrastructure.Backup
                                 .ToList();
             while (dirs.Count > _maxBackups)
             {
-                try { Directory.Delete(dirs[0], true); } catch { }
+                try { Directory.Delete(dirs[0], true); }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Не удалось удалить старый бэкап {dirs[0]}: {ex.Message}");
+                }
                 dirs.RemoveAt(0);
             }
         }

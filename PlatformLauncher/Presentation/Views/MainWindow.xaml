@@ -198,7 +198,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid PreviewMouseDown="RootGrid_PreviewMouseDown">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="15*"/>
             <ColumnDefinition Width="584*"/>
@@ -213,61 +213,204 @@
         <!-- Верхняя панель -->
         <hc:SimplePanel Grid.Row="0" Margin="0,0,0,10" Grid.ColumnSpan="3"
                         Background="{DynamicResource RegionBrush}">
-            <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
-                <Button Content="Обновить список" Width="120" Margin="0,0,10,0"
+            <StackPanel Orientation="Horizontal" Margin="2,0,0,0">
+                <Button Content="Обновить список" Width="120" Margin="0,3,15,0"
                         Command="{Binding RefreshPresetsCommand}" FontSize="11"/>
-                <CheckBox Content="Только установленные" Margin="10,0,0,0" VerticalAlignment="Center"
-                          IsChecked="{Binding ShowOnlyInstalled, Mode=TwoWay}"
-                          Command="{Binding FilterCommand}"/>
-                <CheckBox Content="Только локальные" Margin="10,0,0,0" VerticalAlignment="Center"
-                          IsChecked="{Binding ShowOnlyLocal, Mode=TwoWay}"
-                          Command="{Binding FilterCommand}"/>
             </StackPanel>
         </hc:SimplePanel>
 
         <!-- TabControl -->
         <TabControl x:Name="MainTabControl" Grid.Row="1" Grid.ColumnSpan="3">
-            <TabItem Header="Фиксы">
+            <TabItem Header="Фиксы" Width="83">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="103*"/>
-                        <RowDefinition Height="134*"/>
+                        <RowDefinition Height="Auto"/>
+                        <!-- Для панели поиска -->
+                        <RowDefinition Height="*"/>
+                        <!-- Для ListBox и Expander -->
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="250"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <ListBox ItemsSource="{Binding Games}"
-                             SelectedItem="{Binding SelectedGame}"
-                             Grid.RowSpan="2"
-                             Background="{DynamicResource SecondaryRegionBrush}"
-                             BorderBrush="{DynamicResource BorderBrush}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-                                    <ProgressBar Width="16" Height="16" Margin="10,0,0,0"
-                                                 IsIndeterminate="True"
-                                                 Visibility="{Binding IsInstalling, Converter={StaticResource BoolToVisibility}}"
-                                                 VerticalAlignment="Center"/>
-                                    <ProgressBar Width="16" Height="16" Margin="10,0,0,0"
-                                                 IsIndeterminate="True"
-                                                 Visibility="{Binding IsUninstalling, Converter={StaticResource BoolToVisibility}}"
-                                                 VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                        <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Установить" Command="{Binding InstallCommand}" CommandParameter="{Binding SelectedGame}"/>
-                                <MenuItem Header="Удалить" Command="{Binding UninstallCommand}" CommandParameter="{Binding SelectedGame}"/>
-                                <MenuItem Header="Свойства" Command="{Binding PropertiesCommand}" CommandParameter="{Binding SelectedGame}"/>
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
-                    </ListBox>
+                    <!-- Панель поиска и сортировки -->
+                    <Border Grid.Row="0" Grid.Column="0" 
+                            Background="{DynamicResource RegionBrush}" 
+                            Padding="5" Margin="0,0,0,5">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="100"/>
+                            </Grid.ColumnDefinitions>
 
-                    <!-- Правая часть -->
+                            <!-- Поиск -->
+                            <Grid Grid.Column="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox x:Name="SearchTextBox"
+                                         Grid.Column="0"
+                                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                         MaxLength="16"
+                                         Background="{DynamicResource InputBackground}"
+                                         Foreground="{DynamicResource InputForeground}"
+                                         BorderBrush="{DynamicResource InputBorderBrush}"
+                                         FontSize="12"
+                                         Padding="5,3,24,3"
+                                         GotFocus="SearchTextBox_GotFocus"
+                                         LostFocus="SearchTextBox_LostFocus"
+                                         TextChanged="SearchTextBox_TextChanged"/>
+
+                                <!-- Полупрозрачный текст-подсказка поверх TextBox -->
+                                <TextBlock x:Name="SearchPlaceholder"
+                                           Text="Поиск..."
+                                           Foreground="{DynamicResource PrimaryTextBrush}"
+                                           Opacity="0.5"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           FontSize="12"/>
+
+                                <!-- Крестик для очистки поиска -->
+                                <Button x:Name="ClearSearchButton"
+                                        Grid.Column="1"
+                                        ToolTip="Очистить поиск"
+                                        Width="22"
+                                        Height="22"
+                                        Margin="2,0,0,0"
+                                        Padding="4"
+                                        Visibility="Collapsed"
+                                        Click="ClearSearchButton_Click">
+                                    <Viewbox Width="10" Height="10">
+                                        <Path Data="M 0,0 L 10,10 M 10,0 L 0,10"
+                                              Stroke="{DynamicResource PrimaryTextBrush}"
+                                              StrokeThickness="1.5"
+                                              StrokeLineJoin="Round"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              SnapsToDevicePixels="True"
+                                              UseLayoutRounding="True" />
+                                    </Viewbox>
+                                </Button>
+                            </Grid>
+
+                            <!-- Сортировка -->
+                            <ComboBox Grid.Column="2"
+                                      ItemsSource="{Binding SortOptions}"
+                                      SelectedItem="{Binding SelectedSortOption}"
+                                      DisplayMemberPath="DisplayName"
+                                      Background="{DynamicResource InputBackground}"
+                                      Foreground="{DynamicResource InputForeground}"
+                                      BorderBrush="{DynamicResource InputBorderBrush}"
+                                      FontSize="10"
+                                      Padding="3,2"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Левая колонка: ListBox + Expander с фильтрами -->
+                    <Grid Grid.Column="0" Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <ListBox ItemsSource="{Binding Games}"
+                                 SelectedItem="{Binding SelectedGame}"
+                                 Grid.Row="0"
+                                 Background="{DynamicResource SecondaryRegionBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}"
+                                 PreviewMouseLeftButtonDown="ListBox_PreviewMouseLeftButtonDown"
+                                 PreviewMouseRightButtonDown="ListBox_PreviewMouseRightButtonDown">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                                    <Setter Property="ContextMenu">
+                                        <Setter.Value>
+                                            <ContextMenu DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                                <MenuItem Header="Установить" Command="{Binding InstallCommand}" />
+                                                <MenuItem Header="Удалить" Command="{Binding UninstallCommand}" />
+                                                <MenuItem Header="Свойства" Command="{Binding PropertiesCommand}" />
+                                            </ContextMenu>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                        <ProgressBar Width="16" Height="16" Margin="10,0,0,0"
+                                                     IsIndeterminate="True"
+                                                     Visibility="{Binding IsInstalling, Converter={StaticResource BoolToVisibility}}"
+                                                     VerticalAlignment="Center" />
+                                        <ProgressBar Width="16" Height="16" Margin="10,0,0,0"
+                                                     IsIndeterminate="True"
+                                                     Visibility="{Binding IsUninstalling, Converter={StaticResource BoolToVisibility}}"
+                                                     VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- Раскрывающийся список фильтров -->
+                        <Expander x:Name="FiltersExpander"
+                                  Grid.Row="1"
+                                  Header="{Binding FilterHeader}"
+                                  IsExpanded="False"
+                                  ExpandDirection="Up"
+                                  Background="{DynamicResource SecondaryRegionBrush}"
+                                  Foreground="{DynamicResource PrimaryTextBrush}"
+                                  BorderBrush="{DynamicResource BorderBrush}"
+                                  BorderThickness="0,1,0,0"
+                                  Padding="5,3">
+                            <Grid Margin="5,5,5,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <CheckBox Content="Установленные"
+                                              IsChecked="{Binding FilterInstalled, Mode=TwoWay}"
+                                              Foreground="{DynamicResource PrimaryTextBrush}"
+                                              Margin="0,0,0,4"/>
+                                    <CheckBox Content="Не установленные"
+                                              IsChecked="{Binding FilterNotInstalled, Mode=TwoWay}"
+                                              Foreground="{DynamicResource PrimaryTextBrush}"
+                                              Margin="0,0,0,4"/>
+                                    <CheckBox Content="Пользовательские"
+                                              IsChecked="{Binding FilterCustom, Mode=TwoWay}"
+                                              Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                </StackPanel>
+
+                                <Button Grid.Column="1"
+                                        ToolTip="Сбросить все фильтры"
+                                        Command="{Binding ResetFiltersCommand}"
+                                        Width="26"
+                                        Height="26"
+                                        Margin="8,0,0,0"
+                                        VerticalAlignment="Top"
+                                        Padding="6">
+                                    <Viewbox Width="12" Height="12">
+                                        <Path Data="M 0,0 L 10,10 M 10,0 L 0,10"
+                                              Stroke="{DynamicResource PrimaryTextBrush}"
+                                              StrokeThickness="1.5"
+                                              StrokeLineJoin="Round"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              SnapsToDevicePixels="True"
+                                              UseLayoutRounding="True" />
+                                    </Viewbox>
+                                </Button>
+                            </Grid>
+                        </Expander>
+                    </Grid>
+
+                    <!-- ПКМ терминал -->
                     <Grid Grid.Column="1" Margin="10,0,0,0" Grid.RowSpan="2">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -276,55 +419,77 @@
                         </Grid.RowDefinitions>
 
                         <term:EasyTerminalControl x:Name="ConsoleOutputTerminal"
-                                                 FontSizeWhenSettingTheme="10"
-                                                 Grid.Row="1"
-                                                 StartupCommandLine="cmd.exe /c"
-                                                 LogConPTYOutput="True"
-                                                 Win32InputMode="True"
-                                                 InputCapture="TabKey,DirectionKeys"
-                                                 Margin="0,0,0,25"
-                                                 Grid.RowSpan="2"
-                                                 PreviewKeyDown="ConsoleOutputTerminal_PreviewKeyDown"
-                                                 Loaded="ConsoleOutputTerminal_Loaded">
+                                                  FontSizeWhenSettingTheme="10"
+                                                  Grid.Row="1"
+                                                  StartupCommandLine="cmd.exe /c"
+                                                  LogConPTYOutput="True"
+                                                  Win32InputMode="True"
+                                                  InputCapture="TabKey,DirectionKeys"
+                                                  Margin="0,0,0,30"
+                                                  Grid.RowSpan="2"
+                                                  PreviewKeyDown="ConsoleOutputTerminal_PreviewKeyDown"
+                                                  Loaded="ConsoleOutputTerminal_Loaded">
                             <term:EasyTerminalControl.ContextMenu>
-                                <ContextMenu DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                                    <MenuItem Header="Версия Python" Command="{Binding RunCommandCommand}" CommandParameter="python -V"/>
-                                    <MenuItem Header="Версия PIP" Command="{Binding RunCommandCommand}" CommandParameter="pip -V"/>
-                                    <MenuItem Header="Обновить PIP" Command="{Binding RunCommandCommand}" CommandParameter="python -m pip install --upgrade pip"/>
-                                    <MenuItem Header="Список пакетов" Command="{Binding RunCommandCommand}" CommandParameter="pip list"/>
-                                    <MenuItem Header="Обновить пакеты" Command="{Binding RunCommandCommand}" CommandParameter="pip list --outdated --format=freeze | foreach { pip install --upgrade $_.Split('==')[0] }"/>
-                                    <Separator/>
-                                    <MenuItem Header="Очистить" Command="{Binding ClearConsoleCommand}"/>
-                                </ContextMenu>
-                            </term:EasyTerminalControl.ContextMenu>
-                            <term:EasyTerminalControl.Resources>
-                                <Style TargetType="ScrollBar" BasedOn="{StaticResource {x:Type ScrollBar}}"/>
-                                <Style TargetType="ContextMenu">
-                                    <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
-                                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                                </Style>
-                                <Style TargetType="MenuItem">
-                                    <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
-                                    <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
-                                </Style>
-                            </term:EasyTerminalControl.Resources>
-                        </term:EasyTerminalControl>
+                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                        <MenuItem Header="Версия Python" Command="{Binding RunCommandCommand}" CommandParameter="python -V" />
+                                        <MenuItem Header="Версия PIP" Command="{Binding RunCommandCommand}" CommandParameter="pip -V" />
+                                        <MenuItem Header="Обновить PIP" Command="{Binding RunCommandCommand}" CommandParameter="python -m pip install --upgrade pip" />
+                                        <MenuItem Header="Список пакетов" Command="{Binding RunCommandCommand}" CommandParameter="pip list" />
+                                        <MenuItem Header="Обновить пакеты" Command="{Binding RunCommandCommand}" CommandParameter="pip list --outdated --format=freeze | foreach { pip install --upgrade $_.Split('==')[0] }" />
+                                        <MenuItem Header="Очистить" Command="{Binding ClearConsoleCommand}" />
+                                    </ContextMenu>
+                                </term:EasyTerminalControl.ContextMenu>
+                                <term:EasyTerminalControl.Resources>
+                                    <Style TargetType="ScrollBar" BasedOn="{StaticResource {x:Type ScrollBar}}"/>
+                                    <Style TargetType="ContextMenu">
+                                        <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                                    </Style>
+                                    <Style TargetType="MenuItem" BasedOn="{x:Null}">
+                                        <Setter Property="OverridesDefaultStyle" Value="True"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+                                        <Setter Property="Background" Value="{DynamicResource SecondaryRegionBrush}"/>
+                                        <Setter Property="Padding" Value="10,5"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="MenuItem">
+                                                    <Border x:Name="Bd" 
+                                                Background="{TemplateBinding Background}" 
+                                                Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter ContentSource="Header"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsHighlighted" Value="True">
+                                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter Property="Foreground" Value="{DynamicResource DisabledForeground}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </term:EasyTerminalControl.Resources>
+                            </term:EasyTerminalControl>
                         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
                             <Button Content="{Binding StartButtonText}" Width="120" Margin="0,0,10,0"
-                                    Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"/>
+                            Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"/>
                             <Button Content="Мониторинг" Width="100" Margin="0,0,10,0"
-                                    Command="{Binding MonitorCommand}" IsEnabled="{Binding CanMonitor}"/>
+                            Command="{Binding MonitorCommand}" IsEnabled="{Binding CanMonitor}"/>
                             <Button Content="Остановить" Width="80"
-                                    Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"
-                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+                            Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
                             <TextBlock Text="{Binding StatusText}" Margin="20,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Grid>
                 </Grid>
             </TabItem>
 
-            <TabItem Header="Сервис">
+            <TabItem Header="Сервис" Width="83">
                 <views:ServiceTab x:Name="ServiceTabControl"/>
             </TabItem>
             <TabItem Header="Настройки">
@@ -333,7 +498,7 @@
         </TabControl>
 
         <StatusBar Grid.Row="2" Margin="0,10,0,0" Grid.ColumnSpan="3">
-            <StatusBarItem>
+            <StatusBarItem Margin="0,0,0,3" Width="915">
                 <TextBlock Text="{Binding StatusBarText}"/>
             </StatusBarItem>
         </StatusBar>

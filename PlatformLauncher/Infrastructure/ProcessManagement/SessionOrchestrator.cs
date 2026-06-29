@@ -134,72 +134,75 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
 
         private async void OnProcessExited(int exitCode)
         {
-            if (_sessionEndedRaised) return;
-            _sessionEndedRaised = true;
-
-            bool success = _stopRequested || exitCode == 0;
-
-            // Если остановка была запрошена пользователем и есть бэкап
-            if (_stopRequested && !string.IsNullOrEmpty(_currentBackupDir) && _backupManager != null)
+            try
             {
-                bool saveResult = false;
-                if (_askUserCallback != null)
+                if (_sessionEndedRaised) return;
+                _sessionEndedRaised = true;
+
+                bool success = _stopRequested || exitCode == 0;
+
+                if (_stopRequested && !string.IsNullOrEmpty(_currentBackupDir) && _backupManager != null)
                 {
-                    saveResult = await _askUserCallback(_currentBackupDir);
-                }
-                if (saveResult)
-                {
-                    // Сохраняем результат – помечаем бэкап как .saved, не восстанавливаем
-                    _backupManager.MarkAsSaved(_currentBackupDir);
-                    _backupRestored = true; // чтобы не восстанавливать повторно
-                    OutputReceived?.Invoke("✅ Результат сохранён, бэкап не восстановлен.");
+                    bool saveResult = false;
+                    if (_askUserCallback != null)
+                    {
+                        saveResult = await _askUserCallback(_currentBackupDir);
+                    }
+                    if (saveResult)
+                    {
+                        _backupManager.MarkAsSaved(_currentBackupDir);
+                        _backupRestored = true;
+                        OutputReceived?.Invoke("✅ Результат сохранён, бэкап не восстановлен.");
+                    }
+                    else
+                    {
+                        bool restored = await _backupManager.RestoreBackupAsync(_currentListsPath, _currentBackupDir);
+                        if (restored)
+                        {
+                            OutputReceived?.Invoke("✅ Бэкап восстановлен");
+                            _backupRestored = true;
+                        }
+                        else
+                            OutputReceived?.Invoke("⚠️ Ошибка восстановления бэкапа");
+                    }
                 }
                 else
                 {
-                    // Восстанавливаем бэкап
-                    bool restored = await _backupManager.RestoreBackupAsync(_currentListsPath, _currentBackupDir);
-                    if (restored)
+                    if (_backupManager != null && !string.IsNullOrEmpty(_currentBackupDir) && !_backupRestored)
                     {
-                        OutputReceived?.Invoke("✅ Бэкап восстановлен");
-                        _backupRestored = true;
+                        bool restored = await _backupManager.RestoreBackupAsync(_currentListsPath, _currentBackupDir);
+                        if (restored)
+                        {
+                            OutputReceived?.Invoke("✅ Бэкап восстановлен");
+                            _backupRestored = true;
+                        }
+                        else
+                            OutputReceived?.Invoke("⚠️ Ошибка восстановления бэкапа");
                     }
-                    else
-                        OutputReceived?.Invoke("⚠️ Ошибка восстановления бэкапа");
                 }
-            }
-            else
-            {
-                // Если остановка не была запрошена пользователем (аварийное завершение) или бэкапа нет
-                if (_backupManager != null && !string.IsNullOrEmpty(_currentBackupDir) && !_backupRestored)
+
+                if (_warpStartedByUs)
                 {
-                    bool restored = await _backupManager.RestoreBackupAsync(_currentListsPath, _currentBackupDir);
-                    if (restored)
+                    try
                     {
-                        OutputReceived?.Invoke("✅ Бэкап восстановлен");
-                        _backupRestored = true;
+                        OutputReceived?.Invoke("⏳ Остановка WARP...");
+                        await _warpManager.DisconnectAsync();
+                        OutputReceived?.Invoke("✅ WARP остановлен");
+                        _warpStartedByUs = false;
                     }
-                    else
-                        OutputReceived?.Invoke("⚠️ Ошибка восстановления бэкапа");
+                    catch (Exception ex)
+                    {
+                        OutputReceived?.Invoke($"❌ Ошибка остановки WARP: {ex.Message}");
+                    }
                 }
-            }
 
-            // Остановка WARP (если запускали)
-            if (_warpStartedByUs)
+                SessionEnded?.Invoke(success);
+            }
+            catch (Exception ex)
             {
-                try
-                {
-                    OutputReceived?.Invoke("⏳ Остановка WARP...");
-                    await _warpManager.DisconnectAsync();
-                    OutputReceived?.Invoke("✅ WARP остановлен");
-                    _warpStartedByUs = false;
-                }
-                catch (Exception ex)
-                {
-                    OutputReceived?.Invoke($"❌ Ошибка остановки WARP: {ex.Message}");
-                }
+                _logger.Error("Critical error in OnProcessExited", ex);
+                SessionEnded?.Invoke(false);
             }
-
-            SessionEnded?.Invoke(success);
         }
     }
 }

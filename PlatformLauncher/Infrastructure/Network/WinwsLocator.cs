@@ -43,7 +43,7 @@ namespace PlatformLauncher.Infrastructure.Network
                     }
                     catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
                     {
-                        _logger.Warning("Нет доступа к процессу winws. Запустите лаунчер от имени администратора для автоматического поиска папки lists.");
+                        _logger.Warning("Нет доступа к процессу winws.");
                         return null;
                     }
                     catch (Exception ex)

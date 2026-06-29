@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using PlatformLauncher.Core.Interfaces;
 using PlatformLauncher.Presentation.Views;
 using System;
 using System.Diagnostics;
@@ -14,14 +15,8 @@ namespace PlatformLauncher.AppHost
     {
         public App()
         {
-            DebugLogger.Write("=== APP CONSTRUCTOR START ===");
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
-            AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
-            {
-                DebugLogger.WriteException("FIRST CHANCE EXCEPTION", e.Exception);
-            };
-            DebugLogger.Write("=== APP CONSTRUCTOR END ===");
         }
 
         static App()
@@ -65,50 +60,35 @@ namespace PlatformLauncher.AppHost
             {
                 string assemblyName = new AssemblyName(args.Name).Name;
                 string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName + ".dll");
-                DebugLogger.Write($"AssemblyResolve: {args.Name} -> {path}");
                 if (File.Exists(path))
-                {
-                    DebugLogger.Write($"  -> FOUND");
                     return Assembly.LoadFrom(path);
-                }
-                DebugLogger.Write($"  -> NOT FOUND");
                 return null;
             };
 
-            DebugLogger.Write("=== OnStartup START ===");
             base.OnStartup(e);
 
             try
             {
                 if (!IsAdministrator())
                 {
-                    DebugLogger.Write("RestartAsAdministrator called");
                     RestartAsAdministrator();
                     return;
                 }
 
-                DebugLogger.Write("Creating service provider via DiSetup.ConfigureServices()");
                 var serviceProvider = DiSetup.ConfigureServices();
-                DebugLogger.Write("Service provider created");
-
-                DebugLogger.Write("Resolving MainWindow");
+                var appConfigService = serviceProvider.GetRequiredService<IAppConfigService>();
+                var config = appConfigService.Load();
+                DebugLogger.SetEnabled(config.Logging?.DebugEnabled ?? false);
                 var mainWindow = serviceProvider.GetRequiredService<MainWindow>();
-                DebugLogger.Write("MainWindow resolved");
-
                 MainWindow = mainWindow;
-                DebugLogger.Write("MainWindow set as Application.MainWindow");
-
-                DebugLogger.Write("Calling mainWindow.Show()");
                 mainWindow.Show();
-                DebugLogger.Write("mainWindow.Show() returned");
             }
             catch (Exception ex)
             {
-                DebugLogger.WriteException("OnStartup CATCH", ex);
+                DebugLogger.WriteException("OnStartup failed", ex);
                 MessageBox.Show($"Ошибка при запуске: {ex.Message}\n\n{ex.StackTrace}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
-            DebugLogger.Write("=== OnStartup END ===");
         }
 
         private bool IsAdministrator()
