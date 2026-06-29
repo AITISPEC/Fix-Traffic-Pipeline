@@ -53,16 +53,19 @@ cd Fix-Traffic-Pipeline
 dotnet build PlatformLauncher/PlatformLauncher.csproj -c Release -r win-x64
 
 # Запуск
-./PlatformLauncher/bin/x64/Release/net8.0-windows/PlatformLauncher.exe
+скопировать всё из:
+./PlatformLauncher/bin/x64/Release/net8.0-windows/
+вставить рядом с data
+
+Запустить PlatformLauncher.exe
 ```
 
 ---
 
-## 🖼️ Демонстрация
+## 🖼️ Скриншот
 
-> 📸 **[Место для скриншота или GIF-демонстрации]**
->
-> *Рекомендация для вставки: Анимированный GIF или скриншот главного окна приложения. На экране виден список игр слева, встроенный терминал с цветным выводом мониторинга (например, `🟡 SYN r5apex_dx12.exe -> 1.2.3.4:443 (ea.com)`), и панель управления справа с кнопками "Запустить фикс" и "Мониторинг". Интерфейс оформлен в темной теме "Apex Dark".*
+<img width="681" height="446" alt="screenshot" src="https://github.com/user-attachments/assets/877ef829-f960-44dd-bbfb-525b8f466227" />
+
 
 ---
 
