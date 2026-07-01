@@ -76,7 +76,6 @@ namespace PlatformLauncher
                 return new PortsManager(logger);
             });
 
-            // Session orchestrator – без gameId
             services.AddSingleton<ServiceTabViewModel>(provider =>
             {
                 var warpManager = provider.GetRequiredService<IWarpManager>();
@@ -84,7 +83,8 @@ namespace PlatformLauncher
                 var logger = provider.GetRequiredService<ILogger>();
                 var terminal = provider.GetRequiredService<ITerminalOutput>();
                 var appConfigService = provider.GetRequiredService<IAppConfigService>();
-                return new ServiceTabViewModel(warpManager, settingsManager, logger, terminal, appConfigService, provider);
+                var pythonEnvManager = provider.GetRequiredService<IPythonEnvironmentManager>();
+                return new ServiceTabViewModel(warpManager, settingsManager, logger, terminal, appConfigService, pythonEnvManager, provider);
             });
 
             // Терминал

@@ -121,6 +121,23 @@ namespace PlatformLauncher.Infrastructure.Services
             Save();
         }
 
+        public string GetListsPath()
+        {
+            if (!_settings.TryGetValue("ListsPath", out object value))
+                return string.Empty;
+
+            if (value is System.Text.Json.JsonElement element && element.ValueKind == System.Text.Json.JsonValueKind.String)
+                return element.GetString() ?? string.Empty;
+
+            return value as string ?? string.Empty;
+        }
+
+        public void SetListsPath(string path)
+        {
+            _settings["ListsPath"] = path ?? string.Empty;
+            Save();
+        }
+
         private bool GetBoolSetting(string key)
         {
             if (!_settings.TryGetValue(key, out object value))

@@ -13,6 +13,7 @@
 
 	<ItemGroup>
 	  <Content Include="icon.ico" />
+	  <Content Include="trayicon.ico" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -36,7 +37,7 @@
 	  <None Update="trayicon.ico">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
-	  <None Update="icon.png">
+	  <None Update="icon.ico">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
 	</ItemGroup>

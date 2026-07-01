@@ -59,9 +59,17 @@ namespace PlatformLauncher.Infrastructure.Network
                     if (found != null) return found;
                 }
 
-                // 2. Если не найден – распаковываем zapret из extra
-                _logger.Info("winws не найден, распаковываем zapret из extra/zdy.zip...");
-                return await _zapretManager.EnsureZapretInstalledAsync();
+                // 2. Проверка папки ./zdy/lists в корне приложения
+                string zdyLists = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy", "lists");
+                if (Directory.Exists(zdyLists))
+                {
+                    _logger.Info($"Найдена папка lists в ./zdy: {zdyLists}");
+                    return zdyLists;
+                }
+
+                // 3. Не найдено — возвращаем null (распаковка только по кнопке "Установить Zapret")
+                _logger.Info("winws не найден, папка ./zdy/lists отсутствует. Требуется установка Zapret.");
+                return null;
             }
             catch (Exception ex)
             {

@@ -70,6 +70,7 @@ namespace PlatformLauncher.Presentation.Views
             ServiceTabControl.SetViewModel(_serviceTabViewModel);
             SettingsTabControl.SetViewModel(_serviceTabViewModel);
             _sessionOrchestrator = _serviceProvider.GetRequiredService<ISessionOrchestrator>();
+
             if (viewModel != null)
             {
                 viewModel.PropertyChanged += (s, e) =>
@@ -77,10 +78,13 @@ namespace PlatformLauncher.Presentation.Views
                     if (e.PropertyName == nameof(MainViewModel.ListsPath))
                         _serviceTabViewModel.ListsPath = viewModel.ListsPath;
                     if (e.PropertyName == nameof(MainViewModel.IsRunning))
-                        _serviceTabViewModel.IsThemeChangeAllowed = !viewModel.IsRunning;
+                    {
+                        _serviceTabViewModel.IsSessionActive = viewModel.IsRunning;
+                        UpdateSessionLock(viewModel.IsRunning);
+                    }
                 };
-                _serviceTabViewModel.IsThemeChangeAllowed = !viewModel.IsRunning;
             }
+
             _sessionOrchestrator.SetAskUserCallback(AskUserToSaveBackup);
             _serviceTabViewModel.ListsPath = (DataContext as MainViewModel)?.ListsPath;
             _terminal = terminal;
@@ -127,6 +131,26 @@ namespace PlatformLauncher.Presentation.Views
             }
             UpdateClearButtonVisibility();
             viewModel.ClearConsole();
+        }
+
+        private void UpdateSessionLock(bool isRunning)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => UpdateSessionLock(isRunning));
+                return;
+            }
+
+            if (isRunning)
+            {
+                ServiceTabHeader.Text = "🔒";
+                SettingsTabHeader.Text = "🔒";
+            }
+            else
+            {
+                ServiceTabHeader.Text = "Сервис";
+                SettingsTabHeader.Text = "Настройки";
+            }
         }
 
         private void HookTerminalRightClick()
@@ -243,6 +267,28 @@ namespace PlatformLauncher.Presentation.Views
                     Keyboard.ClearFocus();
                     FocusManager.SetFocusedElement(FocusManager.GetFocusScope(listBox), null);
                 }
+            }
+        }
+
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.AddedItems.Count > 0 && e.AddedItems[0] is TabItem tab && tab.Header?.ToString() == "Фиксы")
+            {
+                // Даем время на полное переключение вкладки
+                Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Background,
+                    new Action(() =>
+                    {
+                        Keyboard.ClearFocus();
+                        FocusManager.SetFocusedElement(FocusManager.GetFocusScope(this), null);
+
+                        // Явно устанавливаем фокус на ListBox с играми
+                        var gamesListBox = FindName("GamesListBox") as ListBox;
+                        if (gamesListBox != null)
+                        {
+                            gamesListBox.Focus();
+                        }
+                    }));
             }
         }
 

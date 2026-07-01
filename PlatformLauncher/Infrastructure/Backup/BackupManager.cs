@@ -88,11 +88,12 @@ namespace PlatformLauncher.Infrastructure.Backup
                 bool hasRestored = File.Exists(Path.Combine(dir, ".restored"));
                 bool hasNoRestored = File.Exists(Path.Combine(dir, ".norestored"));
                 bool hasSaved = File.Exists(Path.Combine(dir, ".saved"));
-                if (!hasRestored && !hasNoRestored)
+                if (!hasRestored && !hasNoRestored && !hasSaved)
                     result.Add(dir);
             }
             return result;
         }
+
 
         public void MarkAsNoRestore(string backupDir)
         {
@@ -104,10 +105,15 @@ namespace PlatformLauncher.Infrastructure.Backup
             var backups = GetBackupDirs();
             foreach (string dir in backups.OrderByDescending(d => d))
             {
-                if (!IsBackupRestored(dir) && !IsBackupNoRestored(dir))
+                if (!IsBackupRestored(dir) && !IsBackupNoRestored(dir) && !IsBackupSaved(dir))
                     return dir;
             }
             return null;
+        }
+
+        private bool IsBackupSaved(string backupDir)
+        {
+            return File.Exists(Path.Combine(backupDir, ".saved"));
         }
 
         private List<string> GetBackupDirs()
@@ -145,6 +151,14 @@ namespace PlatformLauncher.Infrastructure.Backup
 
         private void CopyDirectorySafe(string source, string destination)
         {
+            // Служебные файлы, которые не должны копироваться
+            var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ".restored",
+                ".norestored",
+                ".saved"
+            };
+
             foreach (string dirPath in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
             {
                 string relative = Path.GetRelativePath(source, dirPath);
@@ -154,6 +168,12 @@ namespace PlatformLauncher.Infrastructure.Backup
 
             foreach (string filePath in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
             {
+                string fileName = Path.GetFileName(filePath);
+
+                // Пропускаем служебные файлы
+                if (excludedFiles.Contains(fileName))
+                    continue;
+
                 if (File.Exists(filePath))
                 {
                     string relative = Path.GetRelativePath(source, filePath);

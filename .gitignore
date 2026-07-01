@@ -82,4 +82,5 @@ MANIFEST
 .env
 *.local
 *.bat
+*.lnk
 dump/

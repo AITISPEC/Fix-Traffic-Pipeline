@@ -128,11 +128,22 @@ namespace PlatformLauncher.Infrastructure.Lists
         private bool IsLineToRemove(string line, HashSet<string> domains, HashSet<string> ips)
         {
             if (ips.Contains(line)) return true;
+
             foreach (var d in domains)
             {
+                // 1. Точное совпадение (для обычных доменов и IP)
                 if (line.Equals(d, StringComparison.OrdinalIgnoreCase))
                     return true;
+
+                // 2. Проверка wildcard-масок вида *.domain.com
+                if (d.StartsWith("*."))
+                {
+                    string suffix = d.Substring(1); // Получаем ".domain.com"
+                    if (line.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
             }
+
             return false;
         }
 

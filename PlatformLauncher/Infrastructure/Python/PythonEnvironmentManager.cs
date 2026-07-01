@@ -22,11 +22,18 @@ namespace PlatformLauncher.Infrastructure.Python
         {
             _logger = logger;
             _extraPythonDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra", "python");
-            _runtimePythonDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtimes", "python");
+            _runtimePythonDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "venv");
             _pythonZip = Path.Combine(_extraPythonDir, "python-3.13.14-embed-amd64.zip");
             _pythonExe = Path.Combine(_runtimePythonDir, "python.exe");
             _venvDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".venv");
             _venvPython = Path.Combine(_venvDir, "Scripts", "python.exe");
+        }
+
+        public string GetVenvPythonPath()
+        {
+            if (File.Exists(_venvPython)) return _venvPython;
+            if (File.Exists(_pythonExe)) return _pythonExe;
+            return null;
         }
 
         public async Task<bool> EnsureEnvironmentAsync(string appDataDir, IProgress<string> progress)
@@ -35,99 +42,57 @@ namespace PlatformLauncher.Infrastructure.Python
             {
                 _logger.Info("=== НАЧАЛО ПРОВЕРКИ ОКРУЖЕНИЯ PYTHON ===");
 
-                // 1. Проверяем, есть ли системный Python 3.13+
                 string systemPython = FindSystemPython();
-                string embeddedPython = null;
 
                 if (systemPython != null)
-                    _logger.Info("Найден системный Python: " + systemPython);
-                else
-                    _logger.Info("Системный Python не найден, будет распакован встроенный.");
-
-                // 2. Если системного нет – распаковываем встроенный
-                if (systemPython == null)
                 {
+                    _logger.Info("Найден системный Python: " + systemPython);
+
+                    if (!File.Exists(_venvPython))
+                    {
+                        progress?.Report("Создание виртуального окружения (.venv)...");
+                        var result = await RunProcessAsync(systemPython, $"-m venv \"{_venvDir}\"", progress);
+                        if (result != 0)
+                            throw new Exception($"Ошибка создания venv, код: {result}");
+                    }
+
+                    await InstallPackagesAsync(_venvPython, appDataDir, progress);
+                }
+                else
+                {
+                    _logger.Info("Системный Python не найден, используем встроенный.");
                     progress?.Report("Системный Python не найден, распаковываем встроенный...");
+
                     if (!File.Exists(_pythonZip))
                         throw new FileNotFoundException("Архив Python не найден", _pythonZip);
 
-                    if (Directory.Exists(_runtimePythonDir))
-                        Directory.Delete(_runtimePythonDir, true);
-                    Directory.CreateDirectory(_runtimePythonDir);
-                    ZipFile.ExtractToDirectory(_pythonZip, _runtimePythonDir);
-                    _logger.Info("Встроенный Python распакован в " + _runtimePythonDir);
-
-                    // В embedded Python нужно включить возможность установки pip (изменить python._pth)
-                    string pthPath = Path.Combine(_runtimePythonDir, "python._pth");
-                    if (File.Exists(pthPath))
+                    if (!File.Exists(_pythonExe))
                     {
-                        string content = File.ReadAllText(pthPath);
-                        content = content.Replace("#import site", "import site");
-                        File.WriteAllText(pthPath, content);
-                    }
+                        if (Directory.Exists(_runtimePythonDir))
+                            Directory.Delete(_runtimePythonDir, true);
+                        Directory.CreateDirectory(_runtimePythonDir);
+                        ZipFile.ExtractToDirectory(_pythonZip, _runtimePythonDir);
 
-                    embeddedPython = _pythonExe;
-                    if (!File.Exists(embeddedPython))
-                        throw new Exception("Не удалось найти python.exe после распаковки");
-                    progress?.Report("Встроенный Python распакован.");
-                }
-
-                // 3. Определяем, какой Python использовать для создания venv
-                string basePython = systemPython ?? embeddedPython;
-                if (string.IsNullOrEmpty(basePython))
-                    throw new Exception("Не найден Python для создания venv");
-
-                // 4. Создаём виртуальное окружение, если отсутствует
-                if (!File.Exists(_venvPython))
-                {
-                    progress?.Report("Создание виртуального окружения...");
-                    var result = await RunProcessAsync(basePython, $"-m venv \"{_venvDir}\"", progress);
-                    if (result != 0)
-                        throw new Exception($"Ошибка создания venv, код: {result}");
-                    else
-                        _logger.Info("Виртуальное окружение создано в " + _venvDir);
-                }
-
-                // 5. Устанавливаем pip (если нужно)
-                var pipCheck = await RunProcessAsync(_venvPython, "-m pip --version", null);
-                if (pipCheck != 0)
-                {
-                    progress?.Report("Обновление pip...");
-                    await RunProcessAsync(_venvPython, "-m ensurepip --upgrade", null);
-                }
-
-                // 6. Установка зависимостей из whl-файлов (только если не установлены)
-                string[] whlFiles = {
-                    Path.Combine(_extraPythonDir, "watchdog-6.0.0-py3-none-win_amd64.whl"),
-                    Path.Combine(_extraPythonDir, "pyyaml-6.0.3-cp313-cp313-win_amd64.whl"),
-                    Path.Combine(_extraPythonDir, "psutil-7.2.2-cp313-cp313t-win_amd64.whl")
-                };
-                foreach (var whl in whlFiles)
-                {
-                    if (File.Exists(whl))
-                    {
-                        string packageName = Path.GetFileName(whl).Split('-')[0];
-                        var checkResult = await RunProcessAsync(_venvPython, $"-m pip show {packageName}", null);
-                        if (checkResult == 0)
+                        string pthPath = Path.Combine(_runtimePythonDir, "python313._pth");
+                        if (File.Exists(pthPath))
                         {
-                            _logger.Info($"Пакет {packageName} уже установлен, пропускаем.");
-                            continue;
+                            string content = File.ReadAllText(pthPath);
+                            content = content.Replace("#import site", "import site");
+                            if (!content.Contains("Lib/site-packages"))
+                                content += Environment.NewLine + "Lib/site-packages";
+                            if (!content.Contains("Scripts"))
+                                content += Environment.NewLine + "Scripts";
+                            if (!content.Contains("../data"))
+                                content += Environment.NewLine + "../data";
+                            if (!content.Contains("../data/src"))
+                                content += Environment.NewLine + "../data/src";
+                            if (!content.Contains("../data/configs"))
+                                content += Environment.NewLine + "../data/configs";
+                            File.WriteAllText(pthPath, content);
                         }
-                        progress?.Report($"Установка {Path.GetFileName(whl)}...");
-                        await RunProcessAsync(_venvPython, $"-m pip install \"{whl}\"", progress);
                     }
-                    else
-                    {
-                        _logger.Warning($"Файл {whl} не найден, пропускаем.");
-                    }
-                }
 
-                // 7. Дополнительно устанавливаем из requirements.txt (если есть)
-                string reqPath = Path.Combine(appDataDir, "requirements.txt");
-                if (File.Exists(reqPath))
-                {
-                    progress?.Report("Установка зависимостей из requirements.txt...");
-                    await RunProcessAsync(_venvPython, $"-m pip install -r \"{reqPath}\"", progress);
+                    await InstallPackagesAsync(_pythonExe, appDataDir, progress);
                 }
 
                 _logger.Info("=== ОКРУЖЕНИЕ PYTHON ГОТОВО ===");
@@ -142,9 +107,44 @@ namespace PlatformLauncher.Infrastructure.Python
             }
         }
 
-        public string GetVenvPythonPath()
+        private async Task InstallPackagesAsync(string pythonExe, string appDataDir, IProgress<string> progress)
         {
-            return File.Exists(_venvPython) ? _venvPython : null;
+            var pipCheck = await RunProcessAsync(pythonExe, "-m pip --version", null);
+            if (pipCheck != 0)
+            {
+                progress?.Report("Установка pip...");
+                string getPipPath = Path.Combine(_extraPythonDir, "get-pip.py");
+                if (!File.Exists(getPipPath))
+                    throw new FileNotFoundException("get-pip.py не найден в extra/python/", getPipPath);
+
+                var pipInstallResult = await RunProcessAsync(pythonExe, $"\"{getPipPath}\"", progress);
+                if (pipInstallResult != 0)
+                    throw new Exception($"Ошибка установки pip, код: {pipInstallResult}");
+            }
+
+            string[] whlFiles = {
+                Path.Combine(_extraPythonDir, "watchdog-6.0.0-py3-none-win_amd64.whl"),
+                Path.Combine(_extraPythonDir, "pyyaml-6.0.3-cp313-cp313-win_amd64.whl"),
+                Path.Combine(_extraPythonDir, "psutil-7.2.2-cp37-abi3-win_amd64.whl")
+            };
+            foreach (var whl in whlFiles)
+            {
+                if (File.Exists(whl))
+                {
+                    string packageName = Path.GetFileName(whl).Split('-')[0];
+                    var checkResult = await RunProcessAsync(pythonExe, $"-m pip show {packageName}", null);
+                    if (checkResult == 0) continue;
+                    progress?.Report($"Установка {Path.GetFileName(whl)}...");
+                    await RunProcessAsync(pythonExe, $"-m pip install \"{whl}\"", progress);
+                }
+            }
+
+            string reqPath = Path.Combine(appDataDir, "requirements.txt");
+            if (File.Exists(reqPath))
+            {
+                progress?.Report("Установка зависимостей из requirements.txt...");
+                await RunProcessAsync(pythonExe, $"-m pip install -r \"{reqPath}\"", progress);
+            }
         }
 
         private string FindSystemPython()
@@ -161,8 +161,7 @@ namespace PlatformLauncher.Infrastructure.Python
                 p.WaitForExit(2000);
                 if (p.ExitCode != 0) return null;
                 string output = p.StandardOutput.ReadToEnd();
-                if (output.Contains("Python 3.13"))
-                    return "python";
+                if (output.Contains("Python 3.13")) return "python";
                 return null;
             }
             catch (Exception ex)
@@ -182,8 +181,8 @@ namespace PlatformLauncher.Infrastructure.Python
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8
             };
             using var proc = new Process { StartInfo = psi };
             if (progress != null)

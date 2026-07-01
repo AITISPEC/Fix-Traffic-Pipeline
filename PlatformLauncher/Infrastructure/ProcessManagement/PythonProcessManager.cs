@@ -20,6 +20,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         public event Action<int> ProcessExited;
 
         private string _listsPath;
+        private string _pythonPath;
 
         public bool IsRunning => _process != null && !_process.HasExited;
 
@@ -27,7 +28,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         {
             _logger = logger;
             _processKiller = processKiller;
-            _pythonEnvManager = pythonEnvManager; // <-- СОХРАНЯЕМ
+            _pythonEnvManager = pythonEnvManager;
+            _pythonPath = pythonEnvManager.GetVenvPythonPath();
         }
 
         private void CleanPythonCache()
@@ -86,6 +88,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
+
+            psi.Environment["PYTHONPATH"] = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
 
             _process = new Process { StartInfo = psi };
             _process.OutputDataReceived += (s, e) => OutputReceived?.Invoke(e.Data);

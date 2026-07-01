@@ -29,17 +29,26 @@ namespace PlatformLauncher.Presentation.Views
             }
         }
 
-        private void TabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void TabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (sender is TabControl tabControl && DataContext is ServiceTabViewModel vm)
             {
-                if (tabControl.SelectedItem is TabItem selectedTab && selectedTab.Header?.ToString() == "WARP")
+                if (tabControl.SelectedItem is TabItem selectedTab)
                 {
-                    vm.StartWarpStatusMonitoring();
-                }
-                else
-                {
-                    vm.StopWarpStatusMonitoring();
+                    string header = selectedTab.Header?.ToString();
+                    if (header == "WARP" || header == "ZDY")
+                    {
+                        vm.StartWarpStatusMonitoring();
+                    }
+                    else
+                    {
+                        vm.StopWarpStatusMonitoring();
+                    }
+
+                    if (header == "Python")
+                    {
+                        await vm.RefreshPythonStateAsync();
+                    }
                 }
             }
         }

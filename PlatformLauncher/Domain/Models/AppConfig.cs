@@ -29,6 +29,9 @@ namespace PlatformLauncher.Domain.Models
 
     public class AppSettings
     {
+        [YamlMember(Alias = "app_version")]
+        public string AppVersion { get; set; } = "1.0.0";
+
         [YamlMember(Alias = "python_stop_timeout_ms")]
         public int PythonStopTimeoutMs { get; set; } = 2000;
 

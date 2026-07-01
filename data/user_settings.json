@@ -4,5 +4,6 @@
   "WarpEnabled_monitor": false,
   "FilterInstalled": false,
   "FilterNotInstalled": false,
-  "FilterCustom": false
+  "FilterCustom": false,
+  "ListsPath": "D:\\pro\\zdy\\lists"
 }

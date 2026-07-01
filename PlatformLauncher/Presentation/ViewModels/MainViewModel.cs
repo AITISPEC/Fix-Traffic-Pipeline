@@ -42,6 +42,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         private readonly IServiceProvider _serviceProvider;
         private readonly ISessionOrchestrator _sessionOrchestrator;
 
+        private string _appVersion = "?.?.?";
         private ObservableCollection<GamePreset> _games = new();
         private GamePreset _selectedGame;
         private bool _isAdministrator;
@@ -55,6 +56,12 @@ namespace PlatformLauncher.Presentation.ViewModels
         private bool _filterCustom;
         private string _searchText = string.Empty;
         private SortOption _selectedSortOption;
+
+        public string AppVersion
+        {
+            get => _appVersion;
+            set { _appVersion = value; OnPropertyChanged(); }
+        }
 
         public ObservableCollection<GamePreset> Games
         {
@@ -239,8 +246,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             _sessionOrchestrator = sessionOrchestrator;
             _sessionOrchestrator.OutputReceived += msg => _terminal.WriteLine(msg);
             _sessionOrchestrator.SessionEnded += OnSessionEnded;
-            // Устанавливаем сортировку по умолчанию
-            _selectedSortOption = SortOptions[0]; // "сначала установленные"
+            _selectedSortOption = SortOptions[0];
             OnPropertyChanged(nameof(SelectedSortOption));
 
             RefreshPresetsCommand = new RelayCommand(async _ => await RefreshPresetsAsync(), _ => true);
@@ -290,7 +296,6 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 IsAdministrator = IsCurrentUserAdministrator();
                 await FindListsPathAsync();
-                // Восстанавливаем сохранённые фильтры
                 var (installed, notInstalled, custom) = _settingsManager.GetFilterState();
                 _filterInstalled = installed;
                 _filterNotInstalled = notInstalled;
@@ -300,11 +305,66 @@ namespace PlatformLauncher.Presentation.ViewModels
                 OnPropertyChanged(nameof(FilterCustom));
                 LoadGames();
                 StatusBarText = $"Загружено пресетов: {Games.Count}";
+                var appConfig = _serviceProvider.GetRequiredService<IAppConfigService>().Load();
+                AppVersion = appConfig.App?.AppVersion ?? "?.?.?";
+                _ = Task.Run(async () => await CheckUnrestoredBackupsAsync());
             }
             catch (Exception ex)
             {
                 DebugLogger.WriteException("InitializeAsync error", ex);
                 _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}");
+            }
+        }
+
+        private async Task CheckUnrestoredBackupsAsync()
+        {
+            try
+            {
+                var backupManager = _serviceProvider.GetRequiredService<IBackupManager>();
+                var unrestored = backupManager.GetUnrestoredBackups();
+
+                if (unrestored.Count > 0)
+                {
+                    string latest = backupManager.GetLatestUnrestoredBackup();
+                    if (latest != null && !string.IsNullOrEmpty(ListsPath) && Directory.Exists(ListsPath))
+                    {
+                        string gameId = new DirectoryInfo(Path.GetDirectoryName(latest)).Name;
+
+                        var result = await Application.Current.Dispatcher.InvokeAsync(() =>
+                            MessageBox.Show(
+                                $"Обнаружен невосстановленный бэкап для '{gameId}'.\nВосстановить lists? ",
+                                "Восстановление бэкапа ",
+                                MessageBoxButton.YesNo,
+                                MessageBoxImage.Warning));
+
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            bool restored = await backupManager.RestoreBackupAsync(ListsPath, latest);
+                            if (restored)
+                            {
+                                backupManager.MarkAsSaved(latest);
+                                _terminal.WriteLine($"✅ Бэкап для {gameId} восстановлен. ");
+                            }
+                            else
+                            {
+                                _terminal.WriteLine($"❌ Ошибка восстановления бэкапа для {gameId}. ");
+                            }
+                        }
+                        else
+                        {
+                            backupManager.MarkAsNoRestore(latest);
+                            _terminal.WriteLine($"ℹ️ Бэкап для {gameId} пропущен пользователем. ");
+                        }
+                    }
+                    else
+                    {
+                        _terminal.WriteLine($"⚠️ Обнаружено невосстановленных бэкапов: {unrestored.Count}. Укажите папку lists для восстановления. ");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.WriteException("CheckUnrestoredBackupsAsync failed ", ex);
             }
         }
 
@@ -315,7 +375,16 @@ namespace PlatformLauncher.Presentation.ViewModels
                 ListsPath = await _winwsLocator.FindListsPathAsync();
                 if (string.IsNullOrEmpty(ListsPath))
                 {
-                    _terminal.WriteLine("⚠️ Папка lists не найдена автоматически. Укажите вручную через меню LISTS.");
+                    string savedPath = _settingsManager.GetListsPath();
+                    if (!string.IsNullOrEmpty(savedPath) && Directory.Exists(savedPath))
+                    {
+                        ListsPath = savedPath;
+                        _terminal.WriteLine($"ℹ️ Используется сохранённый путь: {savedPath}");
+                    }
+                    else
+                    {
+                        _terminal.WriteLine("⚠️ Папка lists не найдена автоматически. Укажите вручную через меню Сервис -> ZDY.");
+                    }
                 }
             }
             catch (Exception ex)
@@ -422,6 +491,15 @@ namespace PlatformLauncher.Presentation.ViewModels
         private async Task StartAsync(bool monitorOnly)
         {
             if (SelectedGame == null) return;
+
+            // Жёсткая проверка Python ДО бэкапа и санации
+            string pythonExe = _pythonEnvManager.GetVenvPythonPath();
+            if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
+            {
+                _terminal.WriteLine("⚠️ Python не найден или не установлен");
+                _terminal.WriteLine("   Перейдите в Сервис -> Python, чтобы устранить неисправность");
+                return;
+            }
 
             // Проверка lists нужна ТОЛЬКО для фикса, не для мониторинга
             if (!monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
@@ -606,6 +684,27 @@ namespace PlatformLauncher.Presentation.ViewModels
             _terminal.WriteLine("\n  Запуск с WARP — в свойствах фикса (ПКМ > Свойства).");
             _terminal.WriteLine("\n• Мониторинг — только просмотр соединений, без изменения lists");
             _terminal.WriteLine("\nДля обновления списка игр нажмите «Обновить список»\n");
+
+            if (!IsZapretValid())
+            {
+                _terminal.WriteLine("⚠️ Zapret не найден или не установлен");
+                _terminal.WriteLine("   Перейдите в Сервис -> ZDY и укажите папку lists");
+                _terminal.WriteLine("   Там же можно установить Zapret\n");
+            }
+        }
+
+        private bool IsZapretValid()
+        {
+            if (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath))
+                return false;
+
+            string parentDir = Path.GetDirectoryName(
+                ListsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (string.IsNullOrEmpty(parentDir))
+                return false;
+
+            return File.Exists(Path.Combine(parentDir, "service.bat"));
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

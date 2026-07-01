@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net.Http;
+using System.IO.Compression;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -29,6 +31,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         private readonly ITerminalOutput _terminal;
         private readonly IAppConfigService _appConfigService;
         private readonly IServiceProvider _serviceProvider;
+        private readonly IPythonEnvironmentManager _pythonEnvManager;
 
         private string _warpStatus = "неизвестен";
         private bool _isWarpConnected;
@@ -37,6 +40,13 @@ namespace PlatformLauncher.Presentation.ViewModels
         private string _listsPath;
         private DispatcherTimer _warpStatusTimer;
         private Visibility _lockVisibility = Visibility.Collapsed;
+
+        private bool _isWarpInstalled;
+        private bool _isSystemPythonAvailable;
+        private bool _isVenvExists;
+        private bool _isZapretValid;
+        private bool _canRunZapret;
+        private bool _isSessionActive;
 
         public event Action<bool, bool> DebugEnabledChanged;
         public event Action<string> ThemeChanged;
@@ -61,6 +71,57 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
+        public bool IsSessionActive
+        {
+            get => _isSessionActive;
+            set
+            {
+                if (_isSessionActive == value) return;
+                _isSessionActive = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool CanRunZapret
+        {
+            get => _canRunZapret;
+            private set
+            {
+                if (_canRunZapret == value) return;
+                _canRunZapret = value;
+                OnPropertyChanged();
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
+        public bool IsZapretValid
+        {
+            get => _isZapretValid;
+            private set
+            {
+                if (_isZapretValid == value) return;
+                _isZapretValid = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsZapretMissing));
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
+        public bool IsWarpInstalled
+        {
+            get => _isWarpInstalled;
+            private set
+            {
+                if (_isWarpInstalled == value) return;
+                _isWarpInstalled = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanStartWarp));
+                OnPropertyChanged(nameof(CanStopWarp));
+                OnPropertyChanged(nameof(CanInstallWarp));
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
         public string ListsPath
         {
             get => _listsPath;
@@ -69,7 +130,43 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (_listsPath == value) return;
                 _listsPath = value;
                 OnPropertyChanged();
+                ValidateZapretInstallation();
+                _settingsManager.SetListsPath(value);
                 ListsPathChanged?.Invoke(value);
+            }
+        }
+
+        public bool IsSystemPythonAvailable
+        {
+            get => _isSystemPythonAvailable;
+            private set
+            {
+                if (_isSystemPythonAvailable == value)
+                {
+                    DebugLogger.Debug($"[PythonCheck] IsSystemPythonAvailable setter: уже равно {value}, пропуск");
+                    return;
+                }
+                DebugLogger.Debug($"[PythonCheck] IsSystemPythonAvailable setter: изменение с {_isSystemPythonAvailable} на {value}");
+                _isSystemPythonAvailable = value;
+                OnPropertyChanged();
+                UpdatePythonButtonsState();
+            }
+        }
+
+        public bool IsVenvExists
+        {
+            get => _isVenvExists;
+            private set
+            {
+                if (_isVenvExists == value)
+                {
+                    DebugLogger.Debug($"[PythonCheck] IsVenvExists setter: уже равно {value}, пропуск");
+                    return;
+                }
+                DebugLogger.Debug($"[PythonCheck] IsVenvExists setter: изменение с {_isVenvExists} на {value}");
+                _isVenvExists = value;
+                OnPropertyChanged();
+                UpdatePythonButtonsState();
             }
         }
 
@@ -124,8 +221,12 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        public bool CanStartWarp => !IsWarpConnected;
-        public bool CanStopWarp => IsWarpConnected;
+        public bool CanStartWarp => IsWarpInstalled && !IsWarpConnected;
+        public bool CanStopWarp => IsWarpInstalled && IsWarpConnected;
+        public bool CanInstallWarp => !IsWarpInstalled;
+        public bool IsZapretMissing => !_isZapretValid;
+        public bool CanInstallPython => !IsVenvExists && !IsSystemPythonAvailable;
+        public bool CanCreateVenv => !IsVenvExists && IsSystemPythonAvailable;
 
         public ICommand StartWarpCommand { get; }
         public ICommand StopWarpCommand { get; }
@@ -134,6 +235,12 @@ namespace PlatformLauncher.Presentation.ViewModels
         public ICommand SelectListsPathCommand { get; }
         public ICommand OpenListsFolderCommand { get; }
         public ICommand RunServiceBatCommand { get; }
+        public ICommand InstallPythonCommand { get; }
+        public ICommand FixPythonPathCommand { get; }
+        public ICommand CreateVenvCommand { get; }
+        public ICommand RunZapretCommand { get; }
+        public ICommand InstallZapretCommand { get; }
+        public ICommand InstallWarpCommand { get; }
 
         public ServiceTabViewModel(
             IWarpManager warpManager,
@@ -141,13 +248,15 @@ namespace PlatformLauncher.Presentation.ViewModels
             ILogger logger,
             ITerminalOutput terminal,
             IAppConfigService appConfigService,
-            IServiceProvider serviceProvider) // <-- ДОБАВЛЕН ПАРАМЕТР
+            IPythonEnvironmentManager pythonEnvManager,
+            IServiceProvider serviceProvider)
         {
             _warpManager = warpManager;
             _settingsManager = settingsManager;
             _logger = logger;
             _terminal = terminal;
             _appConfigService = appConfigService;
+            _pythonEnvManager = pythonEnvManager;
             _serviceProvider = serviceProvider;
 
             StartWarpCommand = new RelayCommand(_ => _ = StartWarpAsync());
@@ -157,6 +266,12 @@ namespace PlatformLauncher.Presentation.ViewModels
             SelectListsPathCommand = new RelayCommand(_ => SelectListsPath());
             OpenListsFolderCommand = new RelayCommand(_ => OpenListsFolder());
             RunServiceBatCommand = new RelayCommand(_ => RunServiceBat());
+            InstallPythonCommand = new RelayCommand(async _ => await InstallPythonAsync());
+            FixPythonPathCommand = new RelayCommand(_ => FixPythonPath());
+            InstallWarpCommand = new RelayCommand(async _ => await InstallWarpAsync());
+            RunZapretCommand = new RelayCommand(_ => RunZapret(), _ => CanRunZapret);
+            InstallZapretCommand = new RelayCommand(_ => InstallZapret());
+            CreateVenvCommand = new RelayCommand(async _ => await CreateVenvAsync());
 
             LoadThemesFromFolder();
             InitialDebugEnabled = _appConfigService.Load().Logging?.DebugEnabled ?? false;
@@ -179,7 +294,36 @@ namespace PlatformLauncher.Presentation.ViewModels
                     ThemeChanged?.Invoke(defaultTheme.Id);
                 }
             }
-            _ = UpdateStatusAsync();
+            ValidateZapretInstallation();
+            RefreshZapretState();
+            CheckVenvExists();
+            _ = CheckSystemPythonAsync();
+        }
+
+        private void RefreshZapretState()
+        {
+            if (string.IsNullOrEmpty(_listsPath) || !Directory.Exists(_listsPath))
+            {
+                IsZapretValid = false;
+                CanRunZapret = false;
+                return;
+            }
+
+            string parentDir = Path.GetDirectoryName(
+                _listsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (string.IsNullOrEmpty(parentDir))
+            {
+                IsZapretValid = false;
+                CanRunZapret = false;
+                return;
+            }
+
+            bool hasServiceBat = File.Exists(Path.Combine(parentDir, "service.bat"));
+            bool hasGeneralBat = File.Exists(Path.Combine(parentDir, "general.bat"));
+
+            IsZapretValid = hasServiceBat;
+            CanRunZapret = hasServiceBat && hasGeneralBat;
         }
 
         private void SelectListsPath()
@@ -223,6 +367,39 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
+        private void ValidateZapretInstallation()
+        {
+            if (string.IsNullOrEmpty(_listsPath) || !Directory.Exists(_listsPath))
+            {
+                IsZapretValid = false;
+                CanRunZapret = false;
+                return;
+            }
+
+            string parentDir = Path.GetDirectoryName(
+                _listsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (string.IsNullOrEmpty(parentDir))
+            {
+                IsZapretValid = false;
+                CanRunZapret = false;
+                return;
+            }
+
+            bool hasServiceBat = File.Exists(Path.Combine(parentDir, "service.bat"));
+            bool hasGeneralBat = File.Exists(Path.Combine(parentDir, "general.bat"));
+
+            IsZapretValid = hasServiceBat;
+            CanRunZapret = hasServiceBat && hasGeneralBat;
+
+            if (!hasServiceBat)
+            {
+                _terminal.WriteLine("⚠️ Zapret не найден или не установлен");
+                _terminal.WriteLine("   Перейдите в Сервис -> ZDY и укажите папку lists");
+                _terminal.WriteLine("   Там же можно установить Zapret\n");
+            }
+        }
+
         private void RunServiceBat()
         {
             if (string.IsNullOrEmpty(ListsPath))
@@ -257,6 +434,147 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
+        private async void InstallZapret()
+        {
+            _terminal.WriteLine("⏳ Проверка доступности Zapret...");
+
+            string url = "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.9.9c/zapret-discord-youtube-1.9.9c.zip";
+            string extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
+            Directory.CreateDirectory(extraDir);
+
+            string zipPath = null;
+            bool downloaded = false;
+
+            try
+            {
+                using var client = new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(10);
+                var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _terminal.WriteLine("✅ Ссылка доступна, скачивание...");
+                    zipPath = Path.Combine(extraDir, "zapret-discord-youtube-1.9.9c.zip");
+                    var fileBytes = await client.GetByteArrayAsync(url);
+                    await File.WriteAllBytesAsync(zipPath, fileBytes);
+                    downloaded = true;
+                    _terminal.WriteLine($"✅ Скачано в {zipPath}");
+                }
+                else
+                {
+                    _terminal.WriteLine("⚠️ Ссылка недоступна, используем extra/zdy.zip");
+                }
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"⚠️ Ошибка проверки/скачивания: {ex.Message}");
+                _terminal.WriteLine("   Используем extra/zdy.zip");
+            }
+
+            if (!downloaded)
+            {
+                zipPath = Path.Combine(extraDir, "zdy.zip");
+                if (!File.Exists(zipPath))
+                {
+                    _terminal.WriteLine("❌ extra/zdy.zip не найден!");
+                    return;
+                }
+            }
+
+            string zdyTarget = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
+            _terminal.WriteLine($"⏳ Распаковка в {zdyTarget}...");
+
+            try
+            {
+                if (Directory.Exists(zdyTarget))
+                {
+                    Directory.Delete(zdyTarget, true);
+                }
+
+                ZipFile.ExtractToDirectory(zipPath, zdyTarget);
+                NormalizeExtractedFolder(zdyTarget);
+                _terminal.WriteLine("✅ Распаковка завершена");
+
+                string listsPath = null;
+                var listsDirs = Directory.GetDirectories(zdyTarget, "lists", SearchOption.AllDirectories);
+                if (listsDirs.Length > 0)
+                {
+                    listsPath = listsDirs[0];
+                }
+                else
+                {
+                    listsPath = Path.Combine(zdyTarget, "lists");
+                    Directory.CreateDirectory(listsPath);
+                }
+
+                ListsPath = listsPath;
+                _terminal.WriteLine($"✅ Папка lists: {listsPath}");
+
+                ValidateZapretInstallation();
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка распаковки: {ex.Message}");
+            }
+        }
+
+        private void NormalizeExtractedFolder(string targetDir)
+        {
+            if (!Directory.Exists(targetDir)) return;
+
+            var files = Directory.GetFiles(targetDir);
+            var dirs = Directory.GetDirectories(targetDir);
+
+            // Если в корне нет файлов и ровно одна папка — поднимаем её содержимое
+            if (files.Length == 0 && dirs.Length == 1)
+            {
+                string subDir = dirs[0];
+                _terminal.WriteLine($"   ↳ Обнаружена вложенная папка: {Path.GetFileName(subDir)}");
+                _terminal.WriteLine("   ↳ Перемещаю содержимое на уровень выше...");
+
+                // Перемещаем файлы
+                foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+                {
+                    string relativePath = Path.GetRelativePath(subDir, file);
+                    string destPath = Path.Combine(targetDir, relativePath);
+                    string destDir = Path.GetDirectoryName(destPath);
+                    if (!Directory.Exists(destDir))
+                        Directory.CreateDirectory(destDir);
+                    File.Move(file, destPath, overwrite: true);
+                }
+
+                // Удаляем пустую вложенную папку
+                Directory.Delete(subDir, true);
+            }
+        }
+
+        private void RunZapret()
+        {
+            string zdyDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
+            string generalBat = Path.Combine(zdyDir, "general.bat");
+
+            if (!File.Exists(generalBat))
+            {
+                _terminal.WriteLine("❌ general.bat не найден в zdy/");
+                return;
+            }
+
+            try
+            {
+                var psi = new ProcessStartInfo("cmd.exe", $"/c \"{generalBat}\"")
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = zdyDir
+                };
+                Process.Start(psi);
+                _terminal.WriteLine("✅ general.bat запущен");
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка запуска: {ex.Message}");
+            }
+        }
+
         public void StartWarpStatusMonitoring()
         {
             if (_warpStatusTimer != null) return;
@@ -272,6 +590,309 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             _warpStatusTimer?.Stop();
             _warpStatusTimer = null;
+        }
+
+        private void UpdatePythonButtonsState()
+        {
+            DebugLogger.Debug($"[PythonCheck] UpdatePythonButtonsState вызван: IsVenvExists={IsVenvExists}, IsSystemPythonAvailable={IsSystemPythonAvailable}");
+
+            void DoUpdate()
+            {
+                DebugLogger.Debug($"[PythonCheck] DoUpdate: CanInstallPython={CanInstallPython}, CanCreateVenv={CanCreateVenv}");
+                OnPropertyChanged(nameof(CanInstallPython));
+                OnPropertyChanged(nameof(CanCreateVenv));
+                CommandManager.InvalidateRequerySuggested();
+            }
+
+            if (Application.Current?.Dispatcher?.CheckAccess() == true)
+            {
+                DoUpdate();
+            }
+            else
+            {
+                Application.Current?.Dispatcher?.Invoke(DoUpdate);
+            }
+        }
+
+        private void CheckVenvExists()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            bool exists = Directory.Exists(Path.Combine(baseDir, ".venv")) || Directory.Exists(Path.Combine(baseDir, "venv"));
+            IsVenvExists = exists;
+        }
+
+        public async Task RefreshPythonStateAsync()
+        {
+            DebugLogger.Debug("[PythonCheck] RefreshPythonStateAsync вызван");
+            CheckVenvExists();
+            await CheckSystemPythonAsync();
+        }
+
+        private async Task CheckSystemPythonAsync()
+        {
+            DebugLogger.Debug("[PythonCheck] === Начало проверки системного Python ===");
+            try
+            {
+                DebugLogger.Debug($"[PythonCheck] BaseDirectory: {AppDomain.CurrentDomain.BaseDirectory}");
+                DebugLogger.Debug($"[PythonCheck] PATH: {Environment.GetEnvironmentVariable("PATH")}");
+
+                DebugLogger.Debug("[PythonCheck] Шаг 1: проверка py launcher");
+                if (await TryPythonCommand("py"))
+                {
+                    DebugLogger.Debug("[PythonCheck] ✅ py launcher сработал");
+                    IsSystemPythonAvailable = true;
+                    OnPropertyChanged(nameof(CanInstallPython));
+                    OnPropertyChanged(nameof(CanCreateVenv));
+                    CommandManager.InvalidateRequerySuggested();
+                    return;
+                }
+                DebugLogger.Debug("[PythonCheck] ❌ py launcher не сработал");
+
+                DebugLogger.Debug("[PythonCheck] Шаг 2: проверка через where python");
+                string pythonPath = await FindPythonViaWhere();
+                if (!string.IsNullOrEmpty(pythonPath))
+                {
+                    DebugLogger.Debug($"[PythonCheck] ✅ where python нашёл: {pythonPath}");
+                    IsSystemPythonAvailable = true;
+                    OnPropertyChanged(nameof(CanInstallPython));
+                    OnPropertyChanged(nameof(CanCreateVenv));
+                    CommandManager.InvalidateRequerySuggested();
+                    return;
+                }
+                DebugLogger.Debug("[PythonCheck] ❌ where python ничего не нашёл");
+
+                DebugLogger.Debug("[PythonCheck] Шаг 3: проверка python --version (UseShellExecute=true)");
+                if (await TryPythonCommand("python", useShellExecute: true))
+                {
+                    DebugLogger.Debug("[PythonCheck] ✅ python (shell) сработал");
+                    IsSystemPythonAvailable = true;
+                    OnPropertyChanged(nameof(CanInstallPython));
+                    OnPropertyChanged(nameof(CanCreateVenv));
+                    CommandManager.InvalidateRequerySuggested();
+                    return;
+                }
+                DebugLogger.Debug("[PythonCheck] ❌ python (shell) не сработал");
+
+                DebugLogger.Debug("[PythonCheck] === Системный Python НЕ найден ===");
+                IsSystemPythonAvailable = false;
+                OnPropertyChanged(nameof(CanInstallPython));
+                OnPropertyChanged(nameof(CanCreateVenv));
+                CommandManager.InvalidateRequerySuggested();
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Error($"[PythonCheck] Исключение в CheckSystemPythonAsync: {ex.GetType().Name}: {ex.Message}");
+                DebugLogger.Debug($"[PythonCheck] StackTrace: {ex.StackTrace}");
+                IsSystemPythonAvailable = false;
+                OnPropertyChanged(nameof(CanInstallPython));
+                OnPropertyChanged(nameof(CanCreateVenv));
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
+        private async Task<bool> TryPythonCommand(string command, bool useShellExecute = false)
+        {
+            DebugLogger.Debug($"[PythonCheck] TryPythonCommand: cmd={command}, useShellExecute={useShellExecute}");
+            try
+            {
+                var psi = new ProcessStartInfo(command, "--version")
+                {
+                    RedirectStandardOutput = !useShellExecute,
+                    RedirectStandardError = !useShellExecute,
+                    UseShellExecute = useShellExecute,
+                    CreateNoWindow = !useShellExecute
+                };
+                using var p = Process.Start(psi);
+                if (p == null)
+                {
+                    DebugLogger.Debug("[PythonCheck]   Process.Start вернул null");
+                    return false;
+                }
+
+                string output = "", error = "";
+                if (!useShellExecute)
+                {
+                    output = await p.StandardOutput.ReadToEndAsync();
+                    error = await p.StandardError.ReadToEndAsync();
+                }
+                await p.WaitForExitAsync();
+
+                string combined = (output + error).Trim();
+                bool hasPython = combined.Contains("Python", StringComparison.OrdinalIgnoreCase);
+                DebugLogger.Debug($"[PythonCheck]   ExitCode={p.ExitCode}, output='{output.Trim()}', error='{error.Trim()}', hasPython={hasPython}");
+
+                return p.ExitCode == 0 && hasPython;
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Error($"[PythonCheck]   Исключение: {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task<string> FindPythonViaWhere()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("where", "python")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var p = Process.Start(psi);
+                string output = await p.StandardOutput.ReadToEndAsync();
+                string error = await p.StandardError.ReadToEndAsync();
+                await p.WaitForExitAsync();
+
+                DebugLogger.Debug($"[PythonCheck] where python: ExitCode={p.ExitCode}, output='{output.Trim()}', error='{error.Trim()}'");
+
+                if (p.ExitCode != 0 || string.IsNullOrEmpty(output))
+                    return null;
+
+                string[] paths = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var path in paths)
+                {
+                    string trimmed = path.Trim();
+                    if (string.IsNullOrEmpty(trimmed)) continue;
+
+                    bool isWindowsApps = trimmed.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase);
+                    DebugLogger.Debug($"[PythonCheck]   Путь: {trimmed}, isWindowsApps={isWindowsApps}, exists={File.Exists(trimmed)}");
+
+                    if (isWindowsApps)
+                    {
+                        DebugLogger.Debug("[PythonCheck]     Пропущен (WindowsApps alias)");
+                        continue;
+                    }
+
+                    if (!File.Exists(trimmed))
+                    {
+                        DebugLogger.Debug("[PythonCheck]     Пропущен (файл не существует)");
+                        continue;
+                    }
+
+                    var checkPsi = new ProcessStartInfo(trimmed, "--version")
+                    {
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var checkProc = Process.Start(checkPsi);
+                    if (checkProc == null) continue;
+
+                    string checkOutput = await checkProc.StandardOutput.ReadToEndAsync();
+                    string checkError = await checkProc.StandardError.ReadToEndAsync();
+                    await checkProc.WaitForExitAsync();
+
+                    bool ok = checkProc.ExitCode == 0 && (checkOutput + checkError).Contains("Python", StringComparison.OrdinalIgnoreCase);
+                    DebugLogger.Debug($"[PythonCheck]     Проверка '{trimmed}': ExitCode={checkProc.ExitCode}, output='{checkOutput.Trim()}', ok={ok}");
+
+                    if (ok)
+                        return trimmed;
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Error($"[PythonCheck] Исключение в FindPythonViaWhere: {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task CreateVenvAsync()
+        {
+            _terminal.WriteLine("⏳ Создание виртуального окружения...");
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string venvDir = Path.Combine(baseDir, ".venv");
+
+                var psi = new ProcessStartInfo("python", $"-m venv \"{venvDir}\"")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+                if (p.ExitCode != 0)
+                {
+                    string err = await p.StandardError.ReadToEndAsync();
+                    _terminal.WriteLine($"❌ Ошибка создания venv: {err}");
+                    return;
+                }
+                _terminal.WriteLine("✅ Venv создан.");
+
+                string pipExe = Path.Combine(venvDir, "Scripts", "pip.exe");
+                string reqPath = Path.Combine(baseDir, "data", "requirements.txt");
+
+                bool installSuccess = false;
+                if (File.Exists(reqPath))
+                {
+                    _terminal.WriteLine("⏳ Установка пакетов из requirements.txt...");
+                    var pipPsi = new ProcessStartInfo(pipExe, $"install -r \"{reqPath}\"")
+                    {
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var pipProc = Process.Start(pipPsi);
+                    await pipProc.WaitForExitAsync();
+                    installSuccess = pipProc.ExitCode == 0;
+                    if (!installSuccess)
+                    {
+                        string err = await pipProc.StandardError.ReadToEndAsync();
+                        _terminal.WriteLine($"⚠️ Ошибка установки из requirements.txt: {err}");
+                    }
+                    else
+                    {
+                        _terminal.WriteLine("✅ Пакеты установлены из requirements.txt.");
+                    }
+                }
+
+                if (!installSuccess)
+                {
+                    _terminal.WriteLine("⏳ Попытка установки из локальных whl...");
+                    string extraPythonDir = Path.Combine(baseDir, "extra", "python");
+                    if (Directory.Exists(extraPythonDir))
+                    {
+                        string[] whlFiles = Directory.GetFiles(extraPythonDir, "*.whl");
+                        foreach (var whl in whlFiles)
+                        {
+                            var whlPsi = new ProcessStartInfo(pipExe, $"install \"{whl}\"")
+                            {
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            };
+                            using var whlProc = Process.Start(whlPsi);
+                            await whlProc.WaitForExitAsync();
+                            if (whlProc.ExitCode != 0)
+                            {
+                                string err = await whlProc.StandardError.ReadToEndAsync();
+                                _terminal.WriteLine($"⚠️ Ошибка установки {Path.GetFileName(whl)}: {err}");
+                            }
+                        }
+                        _terminal.WriteLine("✅ Локальные пакеты установлены.");
+                    }
+                    else
+                    {
+                        _terminal.WriteLine("❌ Папка extra/python не найдена.");
+                    }
+                }
+
+                CheckVenvExists();
+                _terminal.WriteLine("✅ Окружение готово.");
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+            }
         }
 
         private void LoadThemesFromFolder()
@@ -396,8 +1017,10 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private async Task UpdateStatusAsync()
         {
+            RefreshZapretState();
             try
             {
+                IsWarpInstalled = await _warpManager.IsInstalledAsync();
                 string status = await _warpManager.GetStatusAsync();
                 IsWarpConnected = status == "connected";
                 WarpStatus = IsWarpConnected ? "подключён" : "отключён";
@@ -422,6 +1045,76 @@ namespace PlatformLauncher.Presentation.ViewModels
                 else
                 {
                     _terminal.WriteLine("❌ Ошибка запуска WARP");
+                }
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+            }
+        }
+
+        private async Task InstallWarpAsync()
+        {
+            try
+            {
+                _terminal.WriteLine("⏳ Проверка доступности сервера Cloudflare...");
+                string url = "https://downloads.cloudflareclient.com/v1/download/windows/version/2026.6.822.0";
+                string extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
+                Directory.CreateDirectory(extraDir);
+                string msiPath = Path.Combine(extraDir, "WARP.msi");
+
+                bool downloaded = false;
+                try
+                {
+                    using var client = new HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(10);
+                    var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "https://downloads.cloudflareclient.com"));
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _terminal.WriteLine("✅ Сервер доступен, скачивание...");
+                        var fileBytes = await client.GetByteArrayAsync(url);
+                        await File.WriteAllBytesAsync(msiPath, fileBytes);
+                        downloaded = true;
+                        _terminal.WriteLine($"✅ Скачано в {msiPath}");
+                    }
+                    else
+                    {
+                        _terminal.WriteLine("⚠️ Сервер недоступен, проверяю локальный файл...");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _terminal.WriteLine($"⚠️ Ошибка проверки/скачивания: {ex.Message}");
+                    _terminal.WriteLine("   Проверяю локальный файл...");
+                }
+
+                if (!downloaded)
+                {
+                    if (!File.Exists(msiPath))
+                    {
+                        _terminal.WriteLine("❌ Файл WARP.msi не найден в extra/");
+                        return;
+                    }
+                    _terminal.WriteLine($"✅ Используем локальный файл: {msiPath}");
+                }
+
+                _terminal.WriteLine("⏳ Установка WARP...");
+                var psi = new ProcessStartInfo("msiexec", $"/i \"{msiPath}\" /quiet /norestart")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var p = Process.Start(psi);
+                await p.WaitForExitAsync();
+
+                if (p.ExitCode == 0)
+                {
+                    _terminal.WriteLine("✅ WARP установлен");
+                    await UpdateStatusAsync();
+                }
+                else
+                {
+                    _terminal.WriteLine($"❌ Ошибка установки, код: {p.ExitCode}");
                 }
             }
             catch (Exception ex)
@@ -609,6 +1302,32 @@ namespace PlatformLauncher.Presentation.ViewModels
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка выполнения команды {command}: {ex}");
+            }
+        }
+
+        private async Task InstallPythonAsync()
+        {
+            _terminal.WriteLine("⏳ Проверка и установка окружения Python...");
+            var progress = new Progress<string>(msg => _terminal.WriteLine(msg));
+            bool ok = await _pythonEnvManager.EnsureEnvironmentAsync(AppDomain.CurrentDomain.BaseDirectory, progress);
+            if (ok)
+                _terminal.WriteLine("✅ Окружение Python готово.");
+            else
+                _terminal.WriteLine("❌ Ошибка установки Python.");
+        }
+
+        private void FixPythonPath()
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("https://github.com/AITISPEC/Helpful/releases/tag/fix-python-path")
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                _terminal.WriteLine($"❌ Не удалось открыть ссылку: {ex.Message}");
             }
         }
 

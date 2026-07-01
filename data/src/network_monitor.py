@@ -153,7 +153,7 @@ class NetworkMonitor:
 		if any(fnmatch.fnmatch(remote_ip, pat) for pat in pass_ips):
 			return
 
-		# ----- Фильтры вывода в консоль (из monitor.yaml) -----
+		# ----- Фильтры вывода в консоль по статусам -----
 		output_statuses = self.config.get("console_output_statuses", [])
 		ignore_statuses = self.config.get("console_ignore_statuses", [])
 		if output_statuses and status not in output_statuses:
@@ -165,9 +165,15 @@ class NetworkMonitor:
 		need_dns = status in self.dns_resolve_statuses
 		domain = self.dns.resolve(remote_ip) if need_dns else "—"
 
-		# 2. exclude — добавляем в exclude-списки, не выводим
 		exclude_ips = self.config.get("exclude_ips", [])
 		exclude_domains = self.config.get("exclude_domains", [])
+		include_ips = self.config.get("include_ips", [])
+		include_domains = self.config.get("include_domains", [])
+		rule = self.list_rules.get(status, {})
+		action = rule.get("action", "ignore")
+		target = rule.get("target", "none")
+
+		# 2. exclude — добавляем в exclude-списки
 		if remote_ip in exclude_ips or (
 			domain != "—"
 			and any(fnmatch.fnmatch(domain, pat) for pat in exclude_domains)
@@ -176,12 +182,9 @@ class NetworkMonitor:
 				self.list_manager.add_to_exclude_lists(
 					remote_ip, domain if domain != "—" else None, proc_name
 				)
-		# 	return  # не выводим
 
-		# 3. include — добавляем в основные списки, не выводим
-		include_ips = self.config.get("include_ips", [])
-		include_domains = self.config.get("include_domains", [])
-		if remote_ip in include_ips or (
+		# 3. include — добавляем в основные списки
+		elif remote_ip in include_ips or (
 			domain != "—"
 			and any(fnmatch.fnmatch(domain, pat) for pat in include_domains)
 		):
@@ -189,14 +192,9 @@ class NetworkMonitor:
 				self.list_manager.add_to_lists_files(
 					remote_ip, domain if domain != "—" else None, proc_name
 				)
-		# 	return  # не выводим
 
 		# 4. Если не в include и не в exclude — действуем по list_rules
-		rule = self.list_rules.get(status, {})
-		action = rule.get("action", "ignore")
-		target = rule.get("target", "none")
-
-		if not self.monitor_only and is_target:
+		elif not self.monitor_only and is_target:
 			if action == "add_to_main":
 				if target in ("ip_only", "both"):
 					self.list_manager.add_to_lists_files(remote_ip, None, proc_name)
