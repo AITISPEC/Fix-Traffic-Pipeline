@@ -27,7 +27,12 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 def run_monitor(game_id, lists_path, monitor_only=False, filter_processes=True):
-	config = load_game_config(game_id)
+	try:
+		config = load_game_config(game_id)
+	except FileNotFoundError as e:
+		print(f"\033[31m❌ Ошибка: {e}\033[0m")
+		sys.exit(1)
+
 	logger = setup_game_logger(game_id)
 
 	logger.info("Запуск мониторинга (управление портами и WARP — в GUI)")

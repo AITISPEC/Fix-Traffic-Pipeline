@@ -13,12 +13,15 @@ terminal:
   color_console: true
   skip_local_ips: true
   highlight_style: GREEN
-monitor: 
+monitor:
+progress_bar:
+  Installing: false
+  Uninstalling: false
 logging:
   level: INFO
   max_file_size: 1048576
   backup_count: 5
-  debug_enabled: true
+  debug_enabled: false
 selected_theme: apex-dark
 lists:
   ip_file: ipset-all.txt

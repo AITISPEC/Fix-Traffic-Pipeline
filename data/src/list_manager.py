@@ -11,6 +11,7 @@ class ListManager:
 	def __init__(self, config, lists_path, readonly=False, flush_interval=5.0):
 		self.config = config  # словарь с именами файлов (из app_config)
 		self.lists_path = lists_path
+		self.fix_file = os.path.join(lists_path, "fix.txt") if lists_path else None
 		self.lock = threading.RLock()
 		self.readonly_mode = readonly or not lists_path
 
@@ -37,6 +38,25 @@ class ListManager:
 			self._create_missing_files()
 			self._load_initial_data()
 			self._start_timer()
+
+		if (
+			not self.readonly_mode
+			and self.fix_file
+			and not os.path.exists(self.fix_file)
+		):
+			try:
+				open(self.fix_file, "w", encoding="utf-8").close()
+			except Exception:
+				pass
+
+	def _write_fix_ip(self, ip):
+		if not self.fix_file or not ip:
+			return
+		try:
+			with open(self.fix_file, "a", encoding="utf-8") as f:
+				f.write(ip + "\n")
+		except Exception as e:
+			logger.error(f"Ошибка записи в fix.txt: {e}")
 
 	def _create_missing_files(self):
 		for fname in self.config.values():
@@ -130,6 +150,7 @@ class ListManager:
 			if ip_new:
 				self.session_added_ips.add(ip)
 				self.ip_buffer.add(ip)
+				self._write_fix_ip(ip)
 				logger.info(f"[ipset-all] + {ip} (Process: {proc_name})")
 			if domain_new:
 				self.session_added_domains.add(domain)
@@ -151,6 +172,7 @@ class ListManager:
 			if ip_new:
 				self.exclude_ips_cache.add(ip)
 				self.exclude_ip_buffer.add(ip)
+				self._write_fix_ip(ip)
 				logger.info(f"[ipset-exclude] + {ip} (Process: {proc_name})")
 			if domain_new:
 				self.exclude_domains_cache.add(domain)

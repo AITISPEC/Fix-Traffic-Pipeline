@@ -1,87 +1,58 @@
 # ==========================================
-# C# / .NET / Visual Studio
+# .NET / Visual Studio / WPF
 # ==========================================
-# Папки сборки и бинарники
 [Bb]in/
 [Oo]bj/
-*.exe
 *.dll
+*.exe
 *.pdb
-
-# Пользовательские настройки и кэш Visual Studio
-.vs/
-*.suo
 *.user
-*.userosscache
+*.suo
 *.sln.docstates
-
-# Родственные артефакты .NET
-*.swp
-*.lut
-*.ideraw
-.ionide/
-
-# Пакеты NuGet
+.vs/
 packages/
-*.nuget.props
-*.nuget.targets
+*.nupkg
+libs/
 
 # ==========================================
 # Python
 # ==========================================
-# Байт-код и кэш
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
+venv/
+ENV/
 .pytest_cache/
 .mypy_cache/
-.ruff_cache/
-
-# Виртуальные окружения (Virtual Environments)
-venv/
-.venv/
-env/
-.env/
-ENV/
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Дистрибутивы, сборка и пакеты
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
 # ==========================================
-# Среды разработки (IDE) и редакторы
+# Runtime Data & Logs (Специфика вашего проекта)
 # ==========================================
-# JetBrains (Rider, PyCharm)
-.idea/
+logs/
+backups/
+debug.log
+*.log
+data/user_settings.json
+data/fix.txt
+data/*.stop_monitor
+data/src/__pycache__/
 
-# Visual Studio Code
-.vscode/
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# Локальные файлы конфигурации (переменные окружения)
-.env
-*.local
-*.bat
-*.lnk
-dump/
+# ==========================================
+# Extracted Tools & Runtimes (Распакованные утилиты)
+# ==========================================
+runtimes/
+zdy/
 extra/
+
+# ==========================================
+# IDE, AI & Dumps
+# ==========================================
+.idea/
+.vscode/
+.cursor/
+.claude/
+CLAUDE.md
+dump/
+dump_*.md
+tests/
