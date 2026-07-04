@@ -25,9 +25,10 @@ namespace PlatformLauncher.Infrastructure.Services
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "PlatformLauncher/1.0");
             _presetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
             _configsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
+            _appConfigService = appConfigService;
         }
 
-        private IAppConfigService _appConfigService;
+        private readonly IAppConfigService _appConfigService;
 
         public PresetsFile LoadPresetsFile()
         {

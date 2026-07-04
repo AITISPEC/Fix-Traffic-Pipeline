@@ -27,7 +27,7 @@ ENV/
 .mypy_cache/
 
 # ==========================================
-# Runtime Data & Logs (Специфика вашего проекта)
+# Runtime Data & Logs
 # ==========================================
 logs/
 backups/
@@ -39,7 +39,7 @@ data/*.stop_monitor
 data/src/__pycache__/
 
 # ==========================================
-# Extracted Tools & Runtimes (Распакованные утилиты)
+# Extracted Tools & Runtimes
 # ==========================================
 runtimes/
 zdy/
@@ -52,7 +52,6 @@ extra/
 .vscode/
 .cursor/
 .claude/
-CLAUDE.md
 dump/
 dump_*.md
 tests/

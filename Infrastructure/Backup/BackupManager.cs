@@ -192,7 +192,7 @@ namespace PlatformLauncher.Infrastructure.Backup
 
             foreach (string filePath in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
             {
-                string fileName = Path.GetFileName(filePath);
+                string fileName = Path.GetFileName(filePath).ToLowerInvariant();
 
                 // Пропускаем служебные файлы
                 if (excludedFiles.Contains(fileName))
