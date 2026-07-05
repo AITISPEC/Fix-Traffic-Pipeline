@@ -2,6 +2,7 @@
 using Microsoft.Win32;
 using PlatformLauncher.Core.Interfaces;
 using PlatformLauncher.Domain.Models;
+using PlatformLauncher.Infrastructure.Python;
 using PlatformLauncher.Presentation.Commands;
 using PlatformLauncher.Presentation.Views;
 using System;
@@ -26,6 +27,7 @@ namespace PlatformLauncher.Presentation.ViewModels
     public class ServiceTabViewModel : INotifyPropertyChanged
     {
         private readonly IWarpManager _warpManager;
+        private readonly INetworkFixService _networkFixService;
         private readonly ISettingsManager _settingsManager;
         private readonly ILogger _logger;
         private readonly ITerminalOutput _terminal;
@@ -252,6 +254,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             ITerminalOutput terminal,
             IAppConfigService appConfigService,
             IPythonEnvironmentManager pythonEnvManager,
+            INetworkFixService networkFixService,
             IServiceProvider serviceProvider)
         {
             _warpManager = warpManager;
@@ -260,11 +263,12 @@ namespace PlatformLauncher.Presentation.ViewModels
             _terminal = terminal;
             _appConfigService = appConfigService;
             _pythonEnvManager = pythonEnvManager;
+            _networkFixService = networkFixService;
             _serviceProvider = serviceProvider;
 
             StartWarpCommand = new RelayCommand(_ => _ = StartWarpAsync());
             StopWarpCommand = new RelayCommand(_ => _ = StopWarpAsync());
-            FixInternetCommand = new RelayCommand(_ => FixInternet());
+            FixInternetCommand = new RelayCommand(async _ => await FixInternetAsync());
             WriteCloudflareCommand = new RelayCommand(_ => _ = WriteCloudflareAsync());
             SelectListsPathCommand = new RelayCommand(_ => SelectListsPath());
             OpenListsFolderCommand = new RelayCommand(_ => OpenListsFolder());
@@ -633,60 +637,38 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private async Task CheckSystemPythonAsync()
         {
-            // Проверяем кэш
             if (_cachedPythonCheckResult.HasValue &&
-                (DateTime.Now - _lastPythonCheckTime) < _pythonCheckCacheDuration)
+                (DateTime.Now - _lastPythonCheckTime).TotalSeconds < 10)
             {
-                DebugLogger.Debug($"[PythonCheck] Используем кэшированный результат: {_cachedPythonCheckResult.Value}");
                 IsSystemPythonAvailable = _cachedPythonCheckResult.Value;
                 return;
             }
 
-            DebugLogger.Debug("[PythonCheck] === Начало проверки системного Python (тихий режим) ===");
-
+            _terminal.WriteLine("🔍 Поиск системного Python через инфраструктуру...");
             try
             {
-                // Шаг 1: Проверка через where python (без открытия окон)
-                string pythonPath = await FindPythonViaWhereQuiet();
-                if (!string.IsNullOrEmpty(pythonPath))
+                // В свежей версии поиск централизован в PythonEnvironmentManager.
+                // Вызываем единый метод, который внутри проходит все шаги (where, реестр, пути).
+                string systemPython = await _pythonEnvManager.FindSystemPythonAsync();
+
+                if (!string.IsNullOrEmpty(systemPython))
                 {
-                    DebugLogger.Debug($"[PythonCheck] ✅ Python найден: {pythonPath}");
+                    _terminal.WriteLine($"✅ Python найден инфраструктурой: {systemPython}");
                     _cachedPythonCheckResult = true;
                     _lastPythonCheckTime = DateTime.Now;
                     IsSystemPythonAvailable = true;
-                    return;
                 }
-
-                // Шаг 2: Проверка через реестр (тихая)
-                string registryPython = FindPythonInRegistry();
-                if (!string.IsNullOrEmpty(registryPython))
+                else
                 {
-                    DebugLogger.Debug($"[PythonCheck] ✅ Python найден в реестре: {registryPython}");
-                    _cachedPythonCheckResult = true;
+                    _terminal.WriteLine("❌ Системный Python не найден. Будет использован встроенный runtime.");
+                    _cachedPythonCheckResult = false;
                     _lastPythonCheckTime = DateTime.Now;
-                    IsSystemPythonAvailable = true;
-                    return;
+                    IsSystemPythonAvailable = false;
                 }
-
-                // Шаг 3: Проверка известных путей (тихая)
-                string knownPathPython = FindPythonInKnownPaths();
-                if (!string.IsNullOrEmpty(knownPathPython))
-                {
-                    DebugLogger.Debug($"[PythonCheck] ✅ Python найден в известных путях: {knownPathPython}");
-                    _cachedPythonCheckResult = true;
-                    _lastPythonCheckTime = DateTime.Now;
-                    IsSystemPythonAvailable = true;
-                    return;
-                }
-
-                DebugLogger.Debug("[PythonCheck] === Системный Python НЕ найден ===");
-                _cachedPythonCheckResult = false;
-                _lastPythonCheckTime = DateTime.Now;
-                IsSystemPythonAvailable = false;
             }
             catch (Exception ex)
             {
-                DebugLogger.Error($"[PythonCheck] Исключение: {ex.Message}");
+                _terminal.WriteLine($"⚠️ Ошибка проверки Python: {ex.Message}");
                 _cachedPythonCheckResult = false;
                 _lastPythonCheckTime = DateTime.Now;
                 IsSystemPythonAvailable = false;
@@ -699,158 +681,11 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        private async Task<string> FindPythonViaWhereQuiet()
-        {
-            try
-            {
-                var psi = new ProcessStartInfo("where", "python")
-                {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,  // ВАЖНО: false для тихого режима
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                };
 
-                using var p = Process.Start(psi);
-                if (p == null) return null;
 
-                string output = await p.StandardOutput.ReadToEndAsync();
-                await p.WaitForExitAsync();
-
-                if (p.ExitCode != 0 || string.IsNullOrEmpty(output))
-                    return null;
-
-                string[] paths = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var path in paths)
-                {
-                    string trimmed = path.Trim();
-                    if (string.IsNullOrEmpty(trimmed)) continue;
-
-                    // Пропускаем WindowsApps alias
-                    if (trimmed.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    if (!File.Exists(trimmed))
-                        continue;
-
-                    // Проверяем версию тихо
-                    var checkPsi = new ProcessStartInfo(trimmed, "--version")
-                    {
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    };
-
-                    using var checkProc = Process.Start(checkPsi);
-                    if (checkProc == null) continue;
-
-                    string checkOutput = await checkProc.StandardOutput.ReadToEndAsync();
-                    await checkProc.WaitForExitAsync();
-
-                    if (checkProc.ExitCode == 0 &&
-                        (checkOutput).Contains("Python", StringComparison.OrdinalIgnoreCase))
-                        return trimmed;
-                }
-                return null;
-            }
-            catch (Exception ex)
-            {
-                DebugLogger.Error($"[PythonCheck] Ошибка в FindPythonViaWhereQuiet: {ex.Message}");
-                return null;
-            }
-        }
-
-        private string FindPythonInRegistry()
-        {
-            try
-            {
-                // Проверяем реестр на наличие Python
-                string[] registryPaths = {
-            @"SOFTWARE\Python\PythonCore",
-            @"SOFTWARE\WOW6432Node\Python\PythonCore"
-        };
-
-                foreach (var basePath in registryPaths)
-                {
-                    using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(basePath);
-                    if (key == null) continue;
-
-                    foreach (var versionName in key.GetSubKeyNames())
-                    {
-                        using var versionKey = key.OpenSubKey($@"{versionName}\InstallPath");
-                        if (versionKey == null) continue;
-
-                        string installPath = versionKey.GetValue(null) as string;
-                        if (!string.IsNullOrEmpty(installPath))
-                        {
-                            string pythonExe = Path.Combine(installPath, "python.exe");
-                            if (File.Exists(pythonExe))
-                                return pythonExe;
-                        }
-                    }
-                }
-
-                // Проверяем реестр текущего пользователя
-                using var userKey = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Python\PythonCore");
-                if (userKey != null)
-                {
-                    foreach (var versionName in userKey.GetSubKeyNames())
-                    {
-                        using var versionKey = userKey.OpenSubKey($@"{versionName}\InstallPath");
-                        if (versionKey == null) continue;
-
-                        string installPath = versionKey.GetValue(null) as string;
-                        if (!string.IsNullOrEmpty(installPath))
-                        {
-                            string pythonExe = Path.Combine(installPath, "python.exe");
-                            if (File.Exists(pythonExe))
-                                return pythonExe;
-                        }
-                    }
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                DebugLogger.Error($"[PythonCheck] Ошибка чтения реестра: {ex.Message}");
-                return null;
-            }
-        }
-
-        private string FindPythonInKnownPaths()
-        {
-            try
-            {
-                string[] knownPaths = {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Python313", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Python312", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Python311", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Python310", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Python313", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Python312", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Python", "Python313", "python.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Python", "Python312", "python.exe"),
-        };
-
-                foreach (var path in knownPaths)
-                {
-                    if (File.Exists(path))
-                        return path;
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                DebugLogger.Error($"[PythonCheck] Ошибка поиска в известных путях: {ex.Message}");
-                return null;
-            }
-        }
-
+        /// <summary>
+        /// Сбрасывает кеш Python.
+        /// </summary>
         public void InvalidatePythonCache()
         {
             _cachedPythonCheckResult = null;
@@ -1238,10 +1073,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        private void FixInternet()
+        private async Task FixInternetAsync()
         {
-            _terminal.WriteLine("🔄 Сброс DNS и сетевых настроек...");
-
             // Переключение на вкладку "Фиксы"
             Application.Current.Dispatcher.Invoke(() =>
             {
@@ -1253,114 +1086,8 @@ namespace PlatformLauncher.Presentation.ViewModels
                 }
             });
 
-            try
-            {
-                // Базовый сброс
-                RunCommand("ipconfig /flushdns");
-                RunCommand("netsh winsock reset");
-                RunCommand("netsh int ip reset");
-
-                // Определяем основной адаптер
-                string mainAdapter = GetMainNetworkAdapter();
-                if (!string.IsNullOrEmpty(mainAdapter))
-                {
-                    _terminal.WriteLine($"   Основной адаптер: {mainAdapter}");
-                    RunCommand($"netsh interface ipv4 set dns \"CloudflareWARP\" static 127.0.2.2");
-                    RunCommand($"netsh interface ipv4 add dns \"CloudflareWARP\" 127.0.2.3 index=2");
-                    RunCommand($"netsh interface ipv4 set dns \"{mainAdapter}\" static 127.0.2.2");
-                    RunCommand($"netsh interface ipv4 add dns \"{mainAdapter}\" 127.0.2.3 index=2");
-                    RunCommand($"netsh interface ipv6 set dns \"{mainAdapter}\" static ::ffff:127.0.2.2");
-                    RunCommand($"netsh interface ipv6 add dns \"{mainAdapter}\" ::ffff:127.0.2.3 index=2");
-                    RunCommand("ipconfig /flushdns");
-                    RunCommand("net stop dnscache");
-                    RunCommand("net start dnscache");
-                    RunCommand($"netsh interface set interface \"CloudflareWARP\" admin=disable");
-                    RunCommand($"netsh interface set interface \"CloudflareWARP\" admin=enable");
-                    RunCommand($"netsh interface set interface \"{mainAdapter}\" admin=disable");
-                    RunCommand($"netsh interface set interface \"{mainAdapter}\" admin=enable");
-                }
-                else
-                {
-                    _terminal.WriteLine("⚠️ Не удалось определить основной адаптер, установка DNS для адаптеров пропущена.");
-                }
-
-                _terminal.WriteLine("✅ Сброс DNS и сетевых настроек выполнен.");
-                _terminal.WriteLine("⚠️ Рекомендуется перезагрузить компьютер для полного применения.");
-            }
-            catch (Exception ex)
-            {
-                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
-            }
-        }
-
-        private string GetMainNetworkAdapter()
-        {
-            try
-            {
-                var psi = new ProcessStartInfo("powershell", "-Command \"Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Get-NetAdapter | Select-Object -ExpandProperty Name\"")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                };
-                using var p = Process.Start(psi);
-                string output = p.StandardOutput.ReadToEnd().Trim();
-                p.WaitForExit(2000);
-                if (!string.IsNullOrEmpty(output))
-                    return output;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"Ошибка получения адаптера через PowerShell: {ex.Message}");
-            }
-
-            try
-            {
-                var adapters = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
-                    .Where(a => a.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
-                                a.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback &&
-                                a.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Tunnel)
-                    .Select(a => a.Name)
-                    .FirstOrDefault();
-                if (!string.IsNullOrEmpty(adapters))
-                    return adapters;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"Ошибка получения адаптера через NetworkInterface: {ex.Message}");
-            }
-
-            return null;
-        }
-
-        private void RunCommand(string command)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo("cmd.exe", "/c " + command)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                using var p = Process.Start(psi);
-                p.WaitForExit(5000);
-                if (p.ExitCode != 0)
-                {
-                    string error = p.StandardError.ReadToEnd();
-                    _logger.Warning($"Команда {command} завершилась с кодом {p.ExitCode}: {error}");
-                }
-                else
-                {
-                    _logger.Info($"Команда {command} выполнена успешно.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Ошибка выполнения команды {command}: {ex}");
-            }
+            // Передаём делегат напрямую, без Progress<>
+            await _networkFixService.FixInternetAsync(msg => _terminal.WriteLine(msg));
         }
 
         private async Task InstallPythonAsync()

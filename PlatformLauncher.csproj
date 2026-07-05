@@ -5,6 +5,7 @@
 		<OutputType>WinExe</OutputType>
 		<TargetFramework>net8.0-windows</TargetFramework>
 		<UseWPF>true</UseWPF>
+		<Nullable>enable</Nullable>
 		<UseWindowsForms>false</UseWindowsForms>
 		<LangVersion>latest</LangVersion>
 		<Platforms>AnyCPU;x64</Platforms>

@@ -17,13 +17,13 @@ using System.Windows.Input;
 
 namespace PlatformLauncher.Presentation.Views
 {
-    public partial class MainWindow : System.Windows.Window
+    public partial class MainWindow : Window
     {
         private readonly IServiceProvider _serviceProvider;
         private ISessionOrchestrator _sessionOrchestrator;
         private ServiceTabViewModel _serviceTabViewModel;
         private readonly ITerminalOutput _terminal;
-        private readonly ThemeApplier _themeApplier;
+        private readonly IThemeService _themeService;
         private delegate IntPtr SubClassProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr uIdSubclass, IntPtr dwRefData);
         private IntPtr _terminalHwnd;
         private SubClassProcDelegate _subclassDelegate;
@@ -55,11 +55,11 @@ namespace PlatformLauncher.Presentation.Views
             ConsoleOutputTerminal.Loaded += (_, __) => HookTerminalRightClick();
             ConsoleOutputTerminal.Unloaded += (_, __) => UnhookTerminalRightClick();
 
-            _themeApplier = new ThemeApplier(serviceProvider);
-            _themeApplier.Attach(ConsoleOutputTerminal, this);
+            _themeService = _serviceProvider.GetRequiredService<IThemeService>();
+            _themeService.Attach(ConsoleOutputTerminal, this);
 
             _serviceTabViewModel = _serviceProvider.GetRequiredService<ServiceTabViewModel>();
-            _serviceTabViewModel.ThemeChanged += (id) => _themeApplier.ApplyTheme(id, _serviceTabViewModel.AllThemes);
+            _serviceTabViewModel.ThemeChanged += (id) => _themeService.ApplyTheme(id, _serviceTabViewModel.AllThemes);
             _serviceTabViewModel.ListsPathChanged += (newPath) =>
             {
                 if (DataContext is MainViewModel mainVm)
@@ -127,7 +127,7 @@ namespace PlatformLauncher.Presentation.Views
             if (themeToApply != null)
             {
                 _serviceTabViewModel.SelectedTheme = themeToApply;
-                _themeApplier.ApplyTheme(themeToApply.Id, _serviceTabViewModel.AllThemes);
+                _themeService.ApplyTheme(themeToApply.Id, _serviceTabViewModel.AllThemes);
             }
             UpdateClearButtonVisibility();
             viewModel.ClearConsole();
@@ -157,7 +157,7 @@ namespace PlatformLauncher.Presentation.Views
         {
             UnhookTerminalRightClick();
 
-            var hwndHosts = ThemeApplier.FindVisualChildren<System.Windows.Interop.HwndHost>(ConsoleOutputTerminal.Terminal);
+            var hwndHosts = TerminalScrollBarStyler.FindVisualChildren<System.Windows.Interop.HwndHost>(ConsoleOutputTerminal.Terminal);
             if (hwndHosts.Count == 0)
             {
                 DebugLogger.Write("HwndHost not found in visual tree");
@@ -222,7 +222,7 @@ namespace PlatformLauncher.Presentation.Views
         {
             Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.Background,
-                new Action(_themeApplier.ApplyTerminalScrollBarStyle));
+                new Action(_themeService.ApplyTerminalScrollBarStyle));
 
             Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.ApplicationIdle,
@@ -238,7 +238,7 @@ namespace PlatformLauncher.Presentation.Views
 
         public void ApplyTheme(string themeId)
         {
-            _themeApplier?.ApplyTheme(themeId, _serviceTabViewModel.AllThemes);
+            _themeService?.ApplyTheme(themeId, _serviceTabViewModel.AllThemes);
         }
 
         private async Task<bool> AskUserToSaveBackup(string backupDir)

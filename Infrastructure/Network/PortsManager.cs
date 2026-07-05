@@ -1,9 +1,10 @@
-﻿using System;
+﻿using PlatformLauncher.Core.Interfaces;
+using PlatformLauncher.Helpers;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
-using PlatformLauncher.Core.Interfaces;
 
 namespace PlatformLauncher.Infrastructure.Network
 {
@@ -105,26 +106,10 @@ namespace PlatformLauncher.Infrastructure.Network
 
         private async Task RunNetshAsync(string arguments)
         {
-            var psi = new ProcessStartInfo("netsh", arguments)
+            var (exitCode, output, error) = await ProcessHelper.RunAsync("netsh", arguments, _logger);
+            if (exitCode != 0)
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
-            };
-            using var process = Process.Start(psi);
-            if (process == null)
-                throw new Exception("Не удалось запустить netsh");
-
-            string output = await process.StandardOutput.ReadToEndAsync();
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                _logger.Error($"netsh exit {process.ExitCode}, error: {error}");
+                _logger.Error($"netsh exit {exitCode}, error: {error}");
                 throw new Exception($"netsh failed: {error}");
             }
             _logger.Info($"netsh output: {output}");
@@ -132,26 +117,10 @@ namespace PlatformLauncher.Infrastructure.Network
 
         private async Task RunPowerShellAsync(string arguments)
         {
-            var psi = new ProcessStartInfo("powershell", arguments)
+            var (exitCode, output, error) = await ProcessHelper.RunAsync("powershell", arguments, _logger);
+            if (exitCode != 0)
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
-            };
-            using var process = Process.Start(psi);
-            if (process == null)
-                throw new Exception("Не удалось запустить PowerShell");
-
-            string output = await process.StandardOutput.ReadToEndAsync();
-            string error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                _logger.Error($"PowerShell exit {process.ExitCode}, error: {error}");
+                _logger.Error($"PowerShell exit {exitCode}, error: {error}");
                 throw new Exception($"PowerShell failed: {error}");
             }
             _logger.Info($"PowerShell output: {output}");

@@ -1,8 +1,9 @@
-﻿using System;
+﻿using PlatformLauncher.Core.Interfaces;
+using PlatformLauncher.Domain.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using PlatformLauncher.Core.Interfaces;
 
 namespace PlatformLauncher.Infrastructure.Services
 {
@@ -11,7 +12,7 @@ namespace PlatformLauncher.Infrastructure.Services
         private readonly ILogger _logger;
         private readonly IAppConfigService _appConfigService;
         private readonly string _settingsPath;
-        private Dictionary<string, object> _settings = new();
+        private UserSettings _settings = new();
         private bool _isWritable = true; // флаг, что запись возможна
 
         public SettingsManager(ILogger logger, IAppConfigService appConfigService)
@@ -31,7 +32,7 @@ namespace PlatformLauncher.Infrastructure.Services
                 _logger.Error($"Ошибка инициализации файла настроек: {ex.Message}");
                 _settingsPath = null;
                 _isWritable = false;
-                _settings = new Dictionary<string, object>(); // работаем с пустыми настройками в памяти
+                _settings = new UserSettings(); // работаем с пустыми настройками в памяти
             }
         }
 
@@ -39,20 +40,19 @@ namespace PlatformLauncher.Infrastructure.Services
         {
             if (string.IsNullOrEmpty(_settingsPath) || !File.Exists(_settingsPath))
             {
-                _settings = new Dictionary<string, object>();
+                _settings = new UserSettings();
                 return;
             }
-
             try
             {
                 var json = File.ReadAllText(_settingsPath);
-                _settings = JsonSerializer.Deserialize<Dictionary<string, object>>(json) ?? new();
+                _settings = JsonSerializer.Deserialize<UserSettings>(json) ?? new UserSettings();
                 _isWritable = true;
             }
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка загрузки настроек из {_settingsPath}: {ex.Message}");
-                _settings = new Dictionary<string, object>();
+                _settings = new UserSettings();
                 _isWritable = true;
             }
         }
@@ -81,74 +81,37 @@ namespace PlatformLauncher.Infrastructure.Services
 
         public bool GetWarpEnabled(string gameId)
         {
-            var key = $"WarpEnabled_{gameId}";
-            if (!_settings.TryGetValue(key, out object value))
-                return false;
-
-            // System.Text.Json десериализует bool как JsonElement
-            if (value is System.Text.Json.JsonElement element)
-            {
-                if (element.ValueKind == System.Text.Json.JsonValueKind.True)
-                    return true;
-                if (element.ValueKind == System.Text.Json.JsonValueKind.False)
-                    return false;
-            }
-
-            return value is bool b && b;
+            return _settings.WarpEnabled.TryGetValue(gameId, out bool enabled) && enabled;
         }
 
         public void SetWarpEnabled(string gameId, bool enabled)
         {
-            var key = $"WarpEnabled_{gameId}";
-            _settings[key] = enabled;
+            _settings.WarpEnabled[gameId] = enabled;
             Save();
         }
 
         public (bool Installed, bool NotInstalled, bool Custom) GetFilterState()
         {
-            return (
-                GetBoolSetting("FilterInstalled"),
-                GetBoolSetting("FilterNotInstalled"),
-                GetBoolSetting("FilterCustom")
-            );
+            return (_settings.FilterInstalled, _settings.FilterNotInstalled, _settings.FilterCustom);
         }
 
         public void SetFilterState(bool installed, bool notInstalled, bool custom)
         {
-            _settings["FilterInstalled"] = installed;
-            _settings["FilterNotInstalled"] = notInstalled;
-            _settings["FilterCustom"] = custom;
+            _settings.FilterInstalled = installed;
+            _settings.FilterNotInstalled = notInstalled;
+            _settings.FilterCustom = custom;
             Save();
         }
 
         public string GetListsPath()
         {
-            if (!_settings.TryGetValue("ListsPath", out object value))
-                return string.Empty;
-
-            if (value is System.Text.Json.JsonElement element && element.ValueKind == System.Text.Json.JsonValueKind.String)
-                return element.GetString() ?? string.Empty;
-
-            return value as string ?? string.Empty;
+            return _settings.ListsPath ?? string.Empty;
         }
 
         public void SetListsPath(string path)
         {
-            _settings["ListsPath"] = path ?? string.Empty;
+            _settings.ListsPath = path ?? string.Empty;
             Save();
-        }
-
-        private bool GetBoolSetting(string key)
-        {
-            if (!_settings.TryGetValue(key, out object value))
-                return false;
-
-            if (value is System.Text.Json.JsonElement element)
-            {
-                if (element.ValueKind == System.Text.Json.JsonValueKind.True) return true;
-                if (element.ValueKind == System.Text.Json.JsonValueKind.False) return false;
-            }
-            return value is bool b && b;
         }
 
         public string GetTheme()

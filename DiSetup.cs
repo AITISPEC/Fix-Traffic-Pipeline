@@ -29,6 +29,16 @@ namespace PlatformLauncher
             services.AddSingleton<IAppConfigService, AppConfigService>();
             services.AddSingleton<ISettingsManager, SettingsManager>();
 
+            // Game list management
+            services.AddSingleton<IGameListService, GameListService>();
+
+            // Validators
+            services.AddSingleton<IPythonValidatorService, PythonValidatorService>();
+            services.AddSingleton<IZapretValidatorService, ZapretValidatorService>();
+
+            // Command runner
+            services.AddSingleton<ICommandRunnerService, CommandRunnerService>();
+
             // Обновление и установка
             services.AddSingleton<IUpdateService>(provider =>
                 new UpdateService(
@@ -43,8 +53,18 @@ namespace PlatformLauncher
             // WARP
             services.AddSingleton<IWarpManager, WarpManager>();
 
+            // Network fix
+            services.AddSingleton<INetworkFixService, NetworkFixService>();
+
             // Процессы
             services.AddSingleton<IProcessKiller, ProcessKiller>();
+
+            // Theme services
+            services.AddSingleton<ThemeColorApplier>();
+            services.AddSingleton<TerminalThemeApplier>();
+            services.AddSingleton<HandyControlThemeManager>();
+            services.AddSingleton<TerminalScrollBarStyler>();
+            services.AddSingleton<IThemeService, ThemeService>();
 
             // Zapret / lists
             services.AddSingleton<IZapretManager, ZapretManager>();
@@ -82,14 +102,22 @@ namespace PlatformLauncher
             services.AddSingleton<ServiceTabViewModel>(provider =>
             {
                 var warpManager = provider.GetRequiredService<IWarpManager>();
+                var networkFixService = provider.GetRequiredService<INetworkFixService>(); // ← ДОБАВЛЕНО
                 var settingsManager = provider.GetRequiredService<ISettingsManager>();
                 var logger = provider.GetRequiredService<ILogger>();
                 var terminal = provider.GetRequiredService<ITerminalOutput>();
                 var appConfigService = provider.GetRequiredService<IAppConfigService>();
                 var pythonEnvManager = provider.GetRequiredService<IPythonEnvironmentManager>();
-                return new ServiceTabViewModel(warpManager, settingsManager, logger, terminal, appConfigService, pythonEnvManager, provider);
+                return new ServiceTabViewModel(
+                    warpManager,
+                    settingsManager,
+                    logger,
+                    terminal,
+                    appConfigService,
+                    pythonEnvManager,
+                    networkFixService,
+                    provider);
             });
-
             // Терминал
             services.AddSingleton<ITerminalOutput, TerminalOutputAdapter>();
 
@@ -101,11 +129,52 @@ namespace PlatformLauncher
             services.AddTransient<StopMonitoringUseCase>();
 
             // ViewModels
-            services.AddTransient<MainViewModel>();
-            services.AddSingleton<ServiceTabViewModel>();
+            // services.AddTransient<MainViewModel>();
+            // services.AddSingleton<ServiceTabViewModel>();
 
             // Окна и контролы
-            services.AddSingleton<MainWindow>();
+            services.AddTransient<MainViewModel>(provider =>
+            {
+                var gameListService = provider.GetRequiredService<IGameListService>();
+                var pythonValidator = provider.GetRequiredService<IPythonValidatorService>();
+                var zapretValidator = provider.GetRequiredService<IZapretValidatorService>();
+                var commandRunner = provider.GetRequiredService<ICommandRunnerService>();
+                var settingsManager = provider.GetRequiredService<ISettingsManager>();
+                var installGameUseCase = provider.GetRequiredService<InstallGameUseCase>();
+                var uninstallGameUseCase = provider.GetRequiredService<UninstallGameUseCase>();
+                var syncPresetsUseCase = provider.GetRequiredService<SyncPresetsUseCase>();
+                var startMonitoringUseCase = provider.GetRequiredService<StartMonitoringUseCase>();
+                var stopMonitoringUseCase = provider.GetRequiredService<StopMonitoringUseCase>();
+                var winwsLocator = provider.GetRequiredService<IWinwsLocator>();
+                var logger = provider.GetRequiredService<ILogger>();
+                var terminal = provider.GetRequiredService<ITerminalOutput>();
+                var sessionOrchestrator = provider.GetRequiredService<ISessionOrchestrator>();
+                return new MainViewModel(
+                    gameListService,
+                    pythonValidator,
+                    zapretValidator,
+                    commandRunner,
+                    settingsManager,
+                    installGameUseCase,
+                    uninstallGameUseCase,
+                    syncPresetsUseCase,
+                    startMonitoringUseCase,
+                    stopMonitoringUseCase,
+                    winwsLocator,
+                    logger,
+                    terminal,
+                    sessionOrchestrator,
+                    provider);
+            });
+
+            services.AddSingleton<MainWindow>(provider =>
+            {
+                var viewModel = provider.GetRequiredService<MainViewModel>();
+                var terminal = provider.GetRequiredService<ITerminalOutput>();
+                var serviceProvider = provider;
+                return new MainWindow(viewModel, terminal, serviceProvider, terminal);
+            });
+
             services.AddTransient<ServiceTab>();
             services.AddTransient<SettingsTab>();
             services.AddTransient<GamePropertiesDialog>();

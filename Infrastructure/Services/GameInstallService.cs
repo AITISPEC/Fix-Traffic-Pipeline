@@ -59,28 +59,53 @@ namespace PlatformLauncher.Infrastructure.Services
             {
                 progress?.Report($"⏳ Установка {preset.Name}...");
 
-                // Пункт 1.3: мониторинг может запускаться без папки lists
+                // Скачиваем конфиг (включая monitor.yaml)
                 var config = _updateService.LoadGameConfig(preset.Id);
                 if (config == null)
-                    throw new Exception("Конфигурация не найдена или не валидна");
+                {
+                    // Конфиг отсутствует или невалиден — скачиваем
+                    var (downloadSuccess, downloadError) = await _updateService.InstallGameAsync(preset);
+                    if (!downloadSuccess)
+                        return (false, downloadError, null);
 
-                // monitor.yaml — режим "только трафик", правил портов нет, статус всё равно ставим Installed=true
+                    // Перезагружаем конфиг после скачивания
+                    config = _updateService.LoadGameConfig(preset.Id);
+                    if (config == null)
+                        throw new Exception("Конфигурация не найдена после скачивания");
+
+                    progress?.Report($"✅ Конфиг {preset.Name} скачан");
+                }
+
+                // Для monitor.yaml установка правил портов не требуется
                 if (preset.Id == "monitor")
                 {
                     progress?.Report("✅ Мониторинг готов к запуску (конфигурация найдена)");
+
+                    // Обновляем статус в presets.yaml
+                    var updatedPresets = _updateService.LoadPresets();
+                    foreach (var p in updatedPresets)
+                    {
+                        if (p.Id == preset.Id)
+                        {
+                            p.Installed = true;
+                            p.ConfigDownloaded = true;
+                            break;
+                        }
+                    }
+                    _updateService.SavePresetsFile(new PresetsFile { Games = updatedPresets });
+
                     return (true, null, preset);
                 }
 
-                // Пункт 2.1: правила портов только если Ports != null в конфиге
+                // Установка правил портов для обычных игр
                 if (config.Ports != null)
                 {
                     progress?.Report("📌 Установка правил портов...");
-
                     var (portOk, portError) = await _portsManager.AddRulesAsync(
-                        config.Ports.Tcp,    // список TCP-портов из config.yaml
-                        config.Ports.Udp,   // список UDP-портов из config.yaml
-                        preset.Id,          // gameId для логирования ("apex", "hunt"...)
-                        progress.Report); // отчёт через IProgress<string>
+                        config.Ports.Tcp,
+                        config.Ports.Udp,
+                        preset.Id,
+                        msg => progress.Report(msg));
 
                     if (portOk)
                         progress?.Report("✅ Правила портов добавлены");
@@ -92,24 +117,23 @@ namespace PlatformLauncher.Infrastructure.Services
                     progress?.Report("ℹ️ В конфиге нет портов");
                 }
 
-                // Обновляем статус пресета в памяти и на диск — двойная запись, потому что LoadPresets() может быть синхронным с UI.
-                var updatedPresets = _updateService.LoadPresets();
-                foreach (var p in updatedPresets)
+                // Обновляем статус пресета
+                var presets = _updateService.LoadPresets();
+                foreach (var p in presets)
                 {
                     if (p.Id == preset.Id)
                     {
-                        p.Installed = true; // ← запись в объект из списка, без deep-clone — работает благодаря референцному хранению List<GamePreset>
+                        p.Installed = true;
+                        p.ConfigDownloaded = true;
                         break;
                     }
                 }
-
-                _updateService.SavePresetsFile(new PresetsFile { Games = updatedPresets });
+                _updateService.SavePresetsFile(new PresetsFile { Games = presets });
 
                 return (true, null, preset);
             }
             catch (Exception ex)
             {
-                // Логируем полное исключение с контекстом — полезно для отладки.
                 _logger.Error($"Ошибка установки: {ex}");
                 return (false, ex.Message, null);
             }
@@ -121,7 +145,7 @@ namespace PlatformLauncher.Infrastructure.Services
             // Прогресс отчёт через Report(IProgress) — не блокирует UI.
             progress?.Report("📌 Удаление правил портов...");
 
-            var (removed, removeError) = await _portsManager.RemoveAllRulesAsync(preset.Id, progress.Report);
+            var (removed, removeError) = await _portsManager.RemoveAllRulesAsync(preset.Id, msg => progress.Report(msg));
             if (removed)
                 progress?.Report("✅ Правила портов удалены");
             else

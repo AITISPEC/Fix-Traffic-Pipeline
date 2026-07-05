@@ -41,12 +41,6 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                             _logger.Info($"Убит python (venv) PID {proc.Id}");
                         }
                     }
-                    // InvalidOperationException/Win32Exception — не вольный доступ к процессу (хотя админ).
-                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
-                    {
-                        _logger.Warning($"Ошибка при завершении python PID {proc.Id}: {ex.Message}");
-                    }
-                    // Catch-all — любая другая ошибка тоже перехватывается.
                     catch (Exception ex)
                     {
                         _logger.Warning($"Ошибка при завершении python PID {proc.Id}: {ex.Message}");
@@ -77,11 +71,6 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                             _logger.Info($"Убит winws.exe PID {proc.Id}");
                         }
                     }
-                    catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
-                    {
-                        _logger.Warning($"Ошибка при завершении winws PID {proc.Id}: {ex.Message}");
-                    }
-                    // Catch-all — любая другая ошибка тоже перехватывается.
                     catch (Exception ex)
                     {
                         _logger.Warning($"Ошибка при завершении winws PID {proc.Id}: {ex.Message}");

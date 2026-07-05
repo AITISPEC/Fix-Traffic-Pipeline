@@ -34,6 +34,8 @@ class ListManager:
 		self._stop_timer = False
 		self._timer_thread = None
 
+		self._files_need_newline = {fname: True for fname in self.config.values()}
+
 		if not self.readonly_mode and self.lists_path:
 			self._create_missing_files()
 			self._load_initial_data()
@@ -186,65 +188,36 @@ class ListManager:
 		if self.readonly_mode or not self.lists_path:
 			return
 		with self.lock:
-
-			def ensure_newline(filepath):
+			def write_buffer(filepath, buffer, config_key):
+				if not buffer: return
 				try:
-					if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-						with open(filepath, "rb") as f:
-							f.seek(-1, 2)
-							if f.read(1) != b"\n":
-								return "\n"
-				except Exception:
-					pass
-				return ""
+					with open(filepath, "a", encoding="utf-8") as f:
+						# Если файл еще не был с переносом строки, добавляем его один раз
+						if self._files_need_newline.get(config_key, True):
+							f.write("\n")
+							self._files_need_newline[config_key] = False
+                    
+						f.write("\n".join(buffer) + "\n")
+					buffer.clear()
+				except Exception as e:
+					logger.error(f"Ошибка записи {filepath}: {e}")
+					self.readonly_mode = True
 
 			if self.ip_buffer:
 				ip_file = os.path.join(self.lists_path, self.config["ip_file"])
-				try:
-					prefix = ensure_newline(ip_file)
-					with open(ip_file, "a", encoding="utf-8") as f:
-						f.write(prefix + "\n".join(self.ip_buffer) + "\n")
-					self.ip_buffer.clear()
-				except Exception as e:
-					logger.error(f"Ошибка записи IP: {e}")
-					self.readonly_mode = True
-
+				write_buffer(ip_file, self.ip_buffer, self.config["ip_file"])
+            
 			if self.domain_buffer:
 				domain_file = os.path.join(self.lists_path, self.config["domain_file"])
-				try:
-					prefix = ensure_newline(domain_file)
-					with open(domain_file, "a", encoding="utf-8") as f:
-						f.write(prefix + "\n".join(self.domain_buffer) + "\n")
-					self.domain_buffer.clear()
-				except Exception as e:
-					logger.error(f"Ошибка записи доменов: {e}")
-					self.readonly_mode = True
-
+				write_buffer(domain_file, self.domain_buffer, self.config["domain_file"])
+            
 			if self.exclude_ip_buffer:
-				excl_ip_file = os.path.join(
-					self.lists_path, self.config["exclude_ip_file"]
-				)
-				try:
-					prefix = ensure_newline(excl_ip_file)
-					with open(excl_ip_file, "a", encoding="utf-8") as f:
-						f.write(prefix + "\n".join(self.exclude_ip_buffer) + "\n")
-					self.exclude_ip_buffer.clear()
-				except Exception as e:
-					logger.error(f"Ошибка записи exclude IP: {e}")
-					self.readonly_mode = True
-
+				excl_ip_file = os.path.join(self.lists_path, self.config["exclude_ip_file"])
+				write_buffer(excl_ip_file, self.exclude_ip_buffer, self.config["exclude_ip_file"])
+            
 			if self.exclude_domain_buffer:
-				excl_dom_file = os.path.join(
-					self.lists_path, self.config["exclude_domain_file"]
-				)
-				try:
-					prefix = ensure_newline(excl_dom_file)
-					with open(excl_dom_file, "a", encoding="utf-8") as f:
-						f.write(prefix + "\n".join(self.exclude_domain_buffer) + "\n")
-					self.exclude_domain_buffer.clear()
-				except Exception as e:
-					logger.error(f"Ошибка записи exclude доменов: {e}")
-					self.readonly_mode = True
+				excl_dom_file = os.path.join(self.lists_path, self.config["exclude_domain_file"])
+				write_buffer(excl_dom_file, self.exclude_domain_buffer, self.config["exclude_domain_file"])
 
 	def shutdown(self):
 		self._stop_timer = True

@@ -212,7 +212,8 @@
 
         <!-- Верхняя панель -->
         <hc:SimplePanel Grid.Row="0" Margin="0,0,0,10" Grid.ColumnSpan="3"
-                        Background="{DynamicResource RegionBrush}">
+                        Background="{DynamicResource RegionBrush}"
+                        IsEnabled="{Binding IsNotProcessing}">
             <Grid>
                 <StackPanel Orientation="Horizontal" Margin="2,0,0,0" HorizontalAlignment="Left">
                     <Button Content="Обновить список" Width="120" Margin="0,3,15,0"
@@ -228,7 +229,9 @@
         </hc:SimplePanel>
 
         <!-- TabControl -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" Grid.ColumnSpan="3" SelectionChanged="MainTabControl_SelectionChanged">
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Grid.ColumnSpan="3" 
+                    SelectionChanged="MainTabControl_SelectionChanged"
+                    IsEnabled="{Binding IsNotProcessing}">
             <TabItem Header="Фиксы" Width="83">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -320,7 +323,7 @@
                     </Border>
 
                     <!-- Левая колонка: ListBox + Expander с фильтрами -->
-                    <Grid Grid.Column="0" Grid.Row="1">
+                    <Grid Grid.Column="0" Grid.Row="1" IsEnabled="{Binding IsNotProcessing}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
@@ -426,7 +429,7 @@
                     </Grid>
 
                     <!-- ПКМ терминал -->
-                    <Grid Grid.Column="1" Margin="10,0,0,0" Grid.RowSpan="2">
+                    <Grid Grid.Column="1" Margin="10,0,0,0" Grid.RowSpan="2" IsEnabled="{Binding IsNotProcessing}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -434,6 +437,7 @@
                         </Grid.RowDefinitions>
 
                         <term:EasyTerminalControl x:Name="ConsoleOutputTerminal"
+                                                  IsEnabled="True"
                                                   FontSizeWhenSettingTheme="10"
                                                   Grid.Row="1"
                                                   StartupCommandLine="cmd.exe /c"
@@ -493,7 +497,7 @@
                         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
                             <Button Content="{Binding StartButtonText}" Width="120" Margin="0,0,10,0"
                                     Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}" />
-                            <Button Content="Мониторинг" Width="100" Margin="0,0,10,0"
+                            <Button Content="{Binding MonitorButtonText}" Width="100" Margin="0,0,10,0"
                                     Command="{Binding MonitorCommand}" IsEnabled="{Binding CanMonitor}" />
                             <Button Content="Остановить" Width="80"
                                     Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"
