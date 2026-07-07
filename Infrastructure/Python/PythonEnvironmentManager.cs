@@ -85,12 +85,14 @@ namespace PlatformLauncher.Infrastructure.Python
                     if (p?.ExitCode != 0) return string.Empty;
                     output = p.StandardOutput.ReadToEnd();
                 }
-                return output.Contains("Python 3.13") ? "python" : string.Empty;
-
+                if (output != null)
+                    return output;
+                else
+                    return string.Empty;
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Ошибка проверки системного Python: {ex.Message}");
+                _logger.Error($"Ошибка проверки системного Python: {ex.Message}");
                 return string.Empty;
             }
         }

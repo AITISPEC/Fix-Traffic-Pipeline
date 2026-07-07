@@ -307,6 +307,13 @@ namespace PlatformLauncher.Presentation.ViewModels
             _ = CheckSystemPythonAsync();
         }
 
+        public Action<string, string>? ServiceLogRequested;
+
+        private void Log(string tab, string message)
+        {
+            ServiceLogRequested?.Invoke(tab, message);
+        }
+
         private void RefreshZapretState()
         {
             if (string.IsNullOrEmpty(_listsPath) || !Directory.Exists(_listsPath))
@@ -371,6 +378,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             catch (Exception ex)
             {
                 _terminal.WriteLine($"❌ Ошибка открытия папки: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка открытия папки: {ex.Message}");
             }
         }
 
@@ -403,7 +411,6 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 _terminal.WriteLine("⚠️ Zapret не найден или не установлен");
                 _terminal.WriteLine("   Перейдите в Сервис -> ZDY и укажите папку lists");
-                _terminal.WriteLine("   Там же можно установить Zapret\n");
             }
         }
 
@@ -411,7 +418,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             if (string.IsNullOrEmpty(ListsPath))
             {
-                _terminal.WriteLine("❌ Папка lists не выбрана");
+                Log("ZDY", "❌ Папка lists не выбрана");
                 return;
             }
 
@@ -423,7 +430,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
             if (!File.Exists(batPath))
             {
-                _terminal.WriteLine($" Файл service.bat не найден: {batPath}");
+                Log("ZDY", $" Файл service.bat не найден: {batPath}");
                 return;
             }
 
@@ -435,17 +442,18 @@ namespace PlatformLauncher.Presentation.ViewModels
                     WorkingDirectory = parentDir
                 };
                 Process.Start(psi);
-                _terminal.WriteLine($"✅ service.bat запущен");
+                Log("ZDY", $"✅ service.bat запущен");
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Ошибка запуска: {ex.Message}");
+                Log("ZDY", $"❌ Ошибка запуска: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка запуска: {ex.Message}");
             }
         }
 
         private async void InstallZapret()
         {
-            _terminal.WriteLine("⏳ Проверка доступности Zapret...");
+            Log("ZDY", "⏳ Проверка доступности Zapret...");
 
             string? url = "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.9.9c/zapret-discord-youtube-1.9.9c.zip";
             string? extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
@@ -462,22 +470,22 @@ namespace PlatformLauncher.Presentation.ViewModels
 
                 if (response.IsSuccessStatusCode)
                 {
-                    _terminal.WriteLine("✅ Ссылка доступна, скачивание...");
+                    Log("ZDY", "✅ Ссылка доступна, скачивание...");
                     zipPath = Path.Combine(extraDir, "zapret-discord-youtube-1.9.9c.zip");
                     var fileBytes = await client.GetByteArrayAsync(url);
                     await File.WriteAllBytesAsync(zipPath, fileBytes);
                     downloaded = true;
-                    _terminal.WriteLine($"✅ Скачано в {zipPath}");
+                    Log("ZDY", $"✅ Скачано в {zipPath}");
                 }
                 else
                 {
-                    _terminal.WriteLine("⚠️ Ссылка недоступна, используем extra/zdy.zip");
+                    Log("ZDY", "⚠️ Ссылка недоступна, используем extra/zdy.zip");
                 }
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"⚠️ Ошибка проверки/скачивания: {ex.Message}");
-                _terminal.WriteLine("   Используем extra/zdy.zip");
+                Log("ZDY", $"⚠️ Ошибка проверки/скачивания: {ex.Message}");
+                Log("ZDY", "   Используем extra/zdy.zip");
             }
 
             if (!downloaded)
@@ -485,13 +493,13 @@ namespace PlatformLauncher.Presentation.ViewModels
                 zipPath = Path.Combine(extraDir, "zdy.zip");
                 if (!File.Exists(zipPath))
                 {
-                    _terminal.WriteLine("❌ extra/zdy.zip не найден!");
+                    Log("ZDY", "❌ extra/zdy.zip не найден!");
                     return;
                 }
             }
 
             string? zdyTarget = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
-            _terminal.WriteLine($"⏳ Распаковка в {zdyTarget}...");
+            Log("ZDY", $"⏳ Распаковка в {zdyTarget}...");
 
             try
             {
@@ -502,13 +510,13 @@ namespace PlatformLauncher.Presentation.ViewModels
 
                 if (string.IsNullOrEmpty(zipPath))
                 {
-                    _terminal.WriteLine("❌ Архив не найден!");
+                    Log("ZDY", "❌ Архив не найден!");
                     return;
                 }
 
                 ZipFile.ExtractToDirectory(zipPath, zdyTarget);
                 NormalizeExtractedFolder(zdyTarget);
-                _terminal.WriteLine("✅ Распаковка завершена");
+                Log("ZDY", "✅ Распаковка завершена");
 
                 string? listsPath = null;
                 var listsDirs = Directory.GetDirectories(zdyTarget, "lists", SearchOption.AllDirectories);
@@ -523,13 +531,14 @@ namespace PlatformLauncher.Presentation.ViewModels
                 }
 
                 ListsPath = listsPath;
-                _terminal.WriteLine($"✅ Папка lists: {listsPath}");
+                Log("ZDY", $"✅ Папка lists: {listsPath}");
 
                 ValidateZapretInstallation();
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Ошибка распаковки: {ex.Message}");
+                Log("ZDY", $"❌ Ошибка распаковки: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка распаковки: {ex.Message}");
             }
         }
 
@@ -565,28 +574,45 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private void RunZapret()
         {
-            string? zdyDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
-            string? generalBat = Path.Combine(zdyDir, "general.bat");
-
-            if (!File.Exists(generalBat))
+            // 1. Проверяем, что ListsPath задан
+            if (string.IsNullOrEmpty(ListsPath))
             {
-                _terminal.WriteLine("❌ general.bat не найден в zdy/");
+                Log("ZDY", "❌ Папка lists не выбрана");
                 return;
             }
 
+            // 2. Определяем родительскую папку (там должны лежать service.bat и general.bat)
+            string? parentDir = Path.GetDirectoryName(ListsPath.TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(parentDir))
+            {
+                Log("ZDY", "❌ Не удалось определить папку для lists");
+                return;
+            }
+
+            // 3. Проверяем наличие general.bat
+            string generalBat = Path.Combine(parentDir, "general.bat");
+            if (!File.Exists(generalBat))
+            {
+                Log("ZDY", $"❌ Файл general.bat не найден: {generalBat}");
+                return;
+            }
+
+            // 4. Запускаем
             try
             {
                 var psi = new ProcessStartInfo("cmd.exe", $"/c \"{generalBat}\"")
                 {
                     UseShellExecute = true,
-                    WorkingDirectory = zdyDir
+                    WorkingDirectory = parentDir
                 };
                 Process.Start(psi);
-                _terminal.WriteLine("✅ general.bat запущен");
+                Log("ZDY", "✅ general.bat запущен");
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Ошибка запуска: {ex.Message}");
+                Log("ZDY", $"❌ Ошибка запуска: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка запуска: {ex.Message}");
             }
         }
 
@@ -652,7 +678,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 return;
             }
 
-            _terminal.WriteLine("🔍 Поиск системного Python через инфраструктуру...");
+            Log("Python", "🔍 Поиск системного Python...");
             try
             {
                 // В свежей версии поиск централизован в PythonEnvironmentManager.
@@ -661,14 +687,15 @@ namespace PlatformLauncher.Presentation.ViewModels
 
                 if (!string.IsNullOrEmpty(systemPython))
                 {
-                    _terminal.WriteLine($"✅ Python найден инфраструктурой: {systemPython}");
+                    Log("Python", $"✅ Найден: {systemPython}");
                     _cachedPythonCheckResult = true;
                     _lastPythonCheckTime = DateTime.Now;
                     IsSystemPythonAvailable = true;
                 }
                 else
                 {
-                    _terminal.WriteLine("❌ Системный Python не найден. Будет использован встроенный runtime.");
+                    Log("Python", "❌ Системный Python не найден. Будет использован встроенный runtime.");
+                    DebugLogger.Write("❌ Системный Python не найден. Будет использован встроенный runtime.");
                     _cachedPythonCheckResult = false;
                     _lastPythonCheckTime = DateTime.Now;
                     IsSystemPythonAvailable = false;
@@ -676,7 +703,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"⚠️ Ошибка проверки Python: {ex.Message}");
+                Log("Python", $"⚠️ Ошибка проверки Python: {ex.Message}");
+                DebugLogger.Write($"⚠️ Ошибка проверки Python: {ex.Message}");
                 _cachedPythonCheckResult = false;
                 _lastPythonCheckTime = DateTime.Now;
                 IsSystemPythonAvailable = false;
@@ -703,7 +731,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private async Task CreateVenvAsync()
         {
-            _terminal.WriteLine("⏳ Создание виртуального окружения...");
+            Log("Python", "⏳ Создание виртуального окружения...");
             try
             {
                 string? baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -725,10 +753,10 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (p.ExitCode != 0)
                 {
                     string? err = await p.StandardError.ReadToEndAsync();
-                    _terminal.WriteLine($"❌ Ошибка создания venv: {err}");
+                    Log("Python", $"❌ Ошибка создания venv: {err}");
                     return;
                 }
-                _terminal.WriteLine("✅ Venv создан.");
+                Log("Python", "✅ Venv создан.");
 
                 string? pipExe = Path.Combine(venvDir, "Scripts", "pip.exe");
                 string? reqPath = Path.Combine(baseDir, "data", "requirements.txt");
@@ -736,7 +764,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 bool installSuccess = false;
                 if (File.Exists(reqPath))
                 {
-                    _terminal.WriteLine("⏳ Установка пакетов из requirements.txt...");
+                    Log("Python", "⏳ Установка пакетов из requirements.txt...");
                     var pipPsi = new ProcessStartInfo(pipExe, $"install -r \"{reqPath}\"")
                     {
                         RedirectStandardOutput = true,
@@ -754,17 +782,17 @@ namespace PlatformLauncher.Presentation.ViewModels
                     if (!installSuccess)
                     {
                         string? err = await pipProc.StandardError.ReadToEndAsync();
-                        _terminal.WriteLine($"⚠️ Ошибка установки из requirements.txt: {err}");
+                        Log("Python", $"⚠️ Ошибка установки из requirements.txt: {err}");
                     }
                     else
                     {
-                        _terminal.WriteLine("✅ Пакеты установлены из requirements.txt.");
+                        Log("Python", "✅ Пакеты установлены из requirements.txt.");
                     }
                 }
 
                 if (!installSuccess)
                 {
-                    _terminal.WriteLine("⏳ Попытка установки из локальных whl...");
+                    Log("Python", "⏳ Попытка установки из локальных whl...");
                     string? extraPythonDir = Path.Combine(baseDir, "extra", "python");
                     if (Directory.Exists(extraPythonDir))
                     {
@@ -787,23 +815,24 @@ namespace PlatformLauncher.Presentation.ViewModels
                             if (whlProc.ExitCode != 0)
                             {
                                 string? err = await whlProc.StandardError.ReadToEndAsync();
-                                _terminal.WriteLine($"⚠️ Ошибка установки {Path.GetFileName(whl)}: {err}");
+                                Log("Python", $"⚠️ Ошибка установки {Path.GetFileName(whl)}: {err}");
                             }
                         }
-                        _terminal.WriteLine("✅ Локальные пакеты установлены.");
+                        Log("Python", "✅ Локальные пакеты установлены.");
                     }
                     else
                     {
-                        _terminal.WriteLine("❌ Папка extra/python не найдена.");
+                        Log("Python", "❌ Папка extra/python не найдена.");
                     }
                 }
 
                 CheckVenvExists();
-                _terminal.WriteLine("✅ Окружение готово.");
+                Log("Python", "✅ Окружение готово.");
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+                Log("Python", $"❌ Ошибка: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка: {ex.Message}");
             }
         }
 
@@ -953,16 +982,19 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (ok)
                 {
                     _terminal.WriteLine("✅ WARP запущен");
+                    Log("WARP", "✅ WARP запущен");
                     await UpdateStatusAsync();
                 }
                 else
                 {
                     _terminal.WriteLine("❌ Ошибка запуска WARP");
+                    Log("WARP", "❌ Ошибка запуска WARP");
                 }
             }
             catch (Exception ex)
             {
                 _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+                Log("WARP", $"❌ Ошибка: {ex.Message}");
             }
         }
 
@@ -970,7 +1002,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             try
             {
-                _terminal.WriteLine("⏳ Проверка доступности сервера Cloudflare...");
+                Log("WARP", "⏳ Проверка доступности сервера Cloudflare...");
                 string? url = "https://downloads.cloudflareclient.com/v1/download/windows/version/2026.6.822.0";
                 string? extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
                 Directory.CreateDirectory(extraDir);
@@ -984,34 +1016,35 @@ namespace PlatformLauncher.Presentation.ViewModels
                     var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "https://downloads.cloudflareclient.com"));
                     if (response.IsSuccessStatusCode)
                     {
-                        _terminal.WriteLine("✅ Сервер доступен, скачивание...");
+                        Log("WARP", "✅ Сервер доступен, скачивание...");
                         var fileBytes = await client.GetByteArrayAsync(url);
                         await File.WriteAllBytesAsync(msiPath, fileBytes);
                         downloaded = true;
-                        _terminal.WriteLine($"✅ Скачано в {msiPath}");
+                        Log("WARP", $"✅ Скачано в {msiPath}");
                     }
                     else
                     {
-                        _terminal.WriteLine("⚠️ Сервер недоступен, проверяю локальный файл...");
+                        Log("WARP", "⚠️ Сервер недоступен, проверяю локальный файл...");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _terminal.WriteLine($"⚠️ Ошибка проверки/скачивания: {ex.Message}");
-                    _terminal.WriteLine("   Проверяю локальный файл...");
+                    Log("WARP", $"⚠️ Ошибка проверки/скачивания: {ex.Message}");
+                    DebugLogger.Write($"⚠️ Ошибка проверки/скачивания: {ex.Message}");
+                    Log("WARP", "   Проверяю локальный файл...");
                 }
 
                 if (!downloaded)
                 {
                     if (!File.Exists(msiPath))
                     {
-                        _terminal.WriteLine("❌ Файл WARP.msi не найден в extra/");
+                        Log("WARP", "❌ Файл WARP.msi не найден в extra/");
                         return;
                     }
-                    _terminal.WriteLine($"✅ Используем локальный файл: {msiPath}");
+                    Log("WARP", $"✅ Используем локальный файл: {msiPath}");
                 }
 
-                _terminal.WriteLine("⏳ Установка WARP...");
+                Log("WARP", "⏳ Установка WARP...");
                 var psi = new ProcessStartInfo("msiexec", $"/i \"{msiPath}\" /quiet /norestart")
                 {
                     UseShellExecute = false,
@@ -1026,17 +1059,19 @@ namespace PlatformLauncher.Presentation.ViewModels
 
                 if (p.ExitCode == 0)
                 {
-                    _terminal.WriteLine("✅ WARP установлен");
+                    Log("WARP", "✅ WARP установлен");
                     await UpdateStatusAsync();
                 }
                 else
                 {
-                    _terminal.WriteLine($"❌ Ошибка установки, код: {p.ExitCode}");
+                    Log("WARP", $"❌ Ошибка установки, код: {p.ExitCode}");
+                    DebugLogger.Write($"❌ Ошибка установки, код: {p.ExitCode}");
                 }
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+                Log("WARP", $"❌ Ошибка: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка: {ex.Message}");
             }
         }
 
@@ -1048,81 +1083,63 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (ok)
                 {
                     _terminal.WriteLine("✅ WARP отключён");
+                    Log("WARP", "✅ WARP отключён");
                     await UpdateStatusAsync();
                 }
                 else
                 {
                     _terminal.WriteLine("❌ Ошибка отключения WARP");
+                    Log("WARP", "❌ Ошибка отключения WARP");
                 }
             }
             catch (Exception ex)
             {
                 _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+                Log("WARP", $"❌ Ошибка: {ex.Message}");
             }
         }
 
         private async Task WriteCloudflareAsync()
         {
-            // Переключение на вкладку "Фиксы"
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                if (Application.Current.MainWindow is MainWindow mainWindow)
-                {
-                    var tabControl = mainWindow.FindName("MainTabControl") as TabControl;
-                    if (tabControl != null)
-                        tabControl.SelectedIndex = 0;
-                }
-            });
-
             try
             {
                 var appConfig = _appConfigService.Load();
                 if (appConfig?.CloudflareDomains == null || appConfig.CloudflareDomains.Count == 0)
                 {
-                    _terminal.WriteLine("⚠️ Список cloudflare_domains в app_config.yaml пуст.");
+                    Log("WARP", "⚠️ Список cloudflare_domains в app_config.yaml пуст.");
                     return;
                 }
                 if (string.IsNullOrEmpty(ListsPath))
                 {
-                    _terminal.WriteLine("❌ Папка lists не выбрана.");
+                    Log("WARP", "❌ Папка lists не выбрана.");
                     return;
                 }
                 var sanitizer = _serviceProvider.GetRequiredService<IListsSanitizer>();
                 sanitizer.WriteCloudflareDomains(ListsPath, appConfig.CloudflareDomains);
-                _terminal.WriteLine($"✅ Cloudflare домены прописаны в {ListsPath}");
+                Log("WARP", $"✅ Cloudflare домены прописаны в {ListsPath}");
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
+                Log("WARP", $"❌ Ошибка: {ex.Message}");
+                DebugLogger.Write($"❌ Ошибка: {ex.Message}");
             }
         }
 
         private async Task FixInternetAsync()
         {
-            // Переключение на вкладку "Фиксы"
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                if (Application.Current.MainWindow is MainWindow mainWindow)
-                {
-                    var tabControl = mainWindow.FindName("MainTabControl") as TabControl;
-                    if (tabControl != null)
-                        tabControl.SelectedIndex = 0;
-                }
-            });
-
             // Передаём делегат напрямую, без Progress<>
-            await _networkFixService.FixInternetAsync(msg => _terminal.WriteLine(msg));
+            await _networkFixService.FixInternetAsync(msg => Log("Help", msg));
         }
 
         private async Task InstallPythonAsync()
         {
-            _terminal.WriteLine("⏳ Проверка и установка окружения Python...");
-            var progress = new Progress<string>(msg => _terminal.WriteLine(msg));
+            Log("Python","⏳ Проверка и установка окружения Python...");
+            var progress = new Progress<string>(msg => Log("Python",msg));
             bool ok = await _pythonEnvManager.EnsureEnvironmentAsync(AppDomain.CurrentDomain.BaseDirectory, progress);
             if (ok)
-                _terminal.WriteLine("✅ Окружение Python готово.");
+                Log("Python","✅ Окружение Python готово.");
             else
-                _terminal.WriteLine("❌ Ошибка установки Python.");
+                Log("Python","❌ Ошибка установки Python.");
         }
 
         private void FixPythonPath()
@@ -1136,7 +1153,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
             catch (Exception ex)
             {
-                _terminal.WriteLine($"❌ Не удалось открыть ссылку: {ex.Message}");
+                Log("Help",$"❌ Не удалось открыть ссылку: {ex.Message}");
+                DebugLogger.Write($"❌ Не удалось открыть ссылку: {ex.Message}");
             }
         }
 

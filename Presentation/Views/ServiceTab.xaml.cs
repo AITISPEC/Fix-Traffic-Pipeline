@@ -14,6 +14,18 @@ namespace PlatformLauncher.Presentation.Views
         public void SetViewModel(ServiceTabViewModel viewModel)
         {
             DataContext = viewModel;
+            viewModel.ServiceLogRequested += OnServiceLog;
+        }
+
+        private void OnServiceLog(string tab, string message)
+        {
+            switch (tab)
+            {
+                case "ZDY": ZdyLogBox?.AppendLine(message); break;
+                case "WARP": WarpLogBox?.AppendLine(message); break;
+                case "Python": PythonLogBox?.AppendLine(message); break;
+                case "Help": HelpLogBox?.AppendLine(message); break;
+            }
         }
 
         private void ThemesListBox_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -37,18 +49,12 @@ namespace PlatformLauncher.Presentation.Views
                 {
                     string? header = selectedTab.Header?.ToString();
                     if (header == "WARP" || header == "ZDY")
-                    {
                         vm.StartWarpStatusMonitoring();
-                    }
                     else
-                    {
                         vm.StopWarpStatusMonitoring();
-                    }
 
                     if (header == "Python")
-                    {
                         await vm.RefreshPythonStateAsync();
-                    }
                 }
             }
         }
