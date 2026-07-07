@@ -14,13 +14,13 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         private readonly ILogger _logger;
         private readonly IProcessKiller _processKiller;
         private readonly IPythonEnvironmentManager _pythonEnvManager; // <-- ДОБАВЛЕНО
-        private Process _process;
+        private Process? _process;
 
-        public event Action<string> OutputReceived;
-        public event Action<int> ProcessExited;
+        public event Action<string>? OutputReceived;
+        public event Action<int>? ProcessExited;
 
-        private string _listsPath;
-        private string _pythonPath;
+        private string _listsPath = string.Empty;
+        private string _pythonPath = string.Empty;
 
         public bool IsRunning => _process != null && !_process.HasExited;
 
@@ -92,8 +92,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             psi.Environment["PYTHONPATH"] = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
 
             _process = new Process { StartInfo = psi };
-            _process.OutputDataReceived += (s, e) => OutputReceived?.Invoke(e.Data);
-            _process.ErrorDataReceived += (s, e) => OutputReceived?.Invoke(e.Data);
+            _process.OutputDataReceived += (s, e) => { if (e.Data != null) OutputReceived?.Invoke(e.Data); };
+            _process.ErrorDataReceived += (s, e) => { if (e.Data != null) OutputReceived?.Invoke(e.Data); };
             _process.EnableRaisingEvents = true;
             _process.Exited += (s, e) => ProcessExited?.Invoke(_process.ExitCode);
 

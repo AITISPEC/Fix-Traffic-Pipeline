@@ -10,9 +10,8 @@ namespace PlatformLauncher.Helpers
     public static class ProcessHelper
     {
         public static async Task<(int ExitCode, string Output, string Error)> RunAsync(
-            string fileName,
-            string arguments,
-            ILogger logger = null,
+            string fileName, string arguments,
+            ILogger? logger = null,
             bool createNoWindow = true,
             int timeoutMs = 30000)
         {

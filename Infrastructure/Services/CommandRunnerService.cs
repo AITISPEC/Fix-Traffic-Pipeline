@@ -18,7 +18,7 @@ namespace PlatformLauncher.Infrastructure.Services
             _pythonEnvManager = pythonEnvManager;
         }
 
-        public async Task<string> RunCommandAsync(string command, Action<string> progressCallback = null)
+        public async Task<string> RunCommandAsync(string command, Action<string>? progressCallback = null)
         {
             if (string.IsNullOrEmpty(command))
             {

@@ -38,9 +38,9 @@ namespace PlatformLauncher.Presentation.ViewModels
         private string _warpStatus = "неизвестен";
         private bool _isWarpConnected;
         private bool _isThemeChangeAllowed = true;
-        private ThemeItem _selectedTheme;
-        private string _listsPath;
-        private DispatcherTimer _warpStatusTimer;
+        private ThemeItem? _selectedTheme;
+        private string _listsPath = string.Empty;
+        private DispatcherTimer? _warpStatusTimer;
         private Visibility _lockVisibility = Visibility.Collapsed;
         private bool? _cachedPythonCheckResult = null;
         private DateTime _lastPythonCheckTime = DateTime.MinValue;
@@ -53,9 +53,9 @@ namespace PlatformLauncher.Presentation.ViewModels
         private bool _canRunZapret;
         private bool _isSessionActive;
 
-        public event Action<bool, bool> DebugEnabledChanged;
-        public event Action<string> ThemeChanged;
-        public event Action<string> ListsPathChanged;
+        public event Action<bool, bool>? DebugEnabledChanged;
+        public event Action<string>? ThemeChanged;
+        public event Action<string>? ListsPathChanged;
 
         public ObservableCollection<ThemeItem> LightThemes { get; } = new ObservableCollection<ThemeItem>();
         public ObservableCollection<ThemeItem> DarkThemes { get; } = new ObservableCollection<ThemeItem>();
@@ -204,7 +204,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             set { _lockVisibility = value; OnPropertyChanged(); }
         }
 
-        public ThemeItem SelectedTheme
+        public ThemeItem? SelectedTheme
         {
             get => _selectedTheme;
             set
@@ -282,7 +282,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
             LoadThemesFromFolder();
             InitialDebugEnabled = _appConfigService.Load().Logging?.DebugEnabled ?? false;
-            string savedThemeId = _settingsManager.GetTheme()?.Trim();
+            string? savedThemeId = _settingsManager.GetTheme()?.Trim();
 
             var savedTheme = AllThemes.FirstOrDefault(t => t.Id.Equals(savedThemeId, StringComparison.OrdinalIgnoreCase));
             if (savedTheme != null)
@@ -316,7 +316,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 return;
             }
 
-            string parentDir = Path.GetDirectoryName(
+            string? parentDir = Path.GetDirectoryName(
                 _listsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             if (string.IsNullOrEmpty(parentDir))
@@ -383,7 +383,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 return;
             }
 
-            string parentDir = Path.GetDirectoryName(
+            string? parentDir = Path.GetDirectoryName(
                 _listsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             if (string.IsNullOrEmpty(parentDir))
@@ -415,9 +415,11 @@ namespace PlatformLauncher.Presentation.ViewModels
                 return;
             }
 
-            string parentDir = Path.GetDirectoryName(ListsPath.TrimEnd(
+            string? parentDir = Path.GetDirectoryName(ListsPath.TrimEnd(
                 Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            string batPath = Path.Combine(parentDir, "service.bat");
+            if (parentDir == null)
+                return;
+            string? batPath = Path.Combine(parentDir, "service.bat");
 
             if (!File.Exists(batPath))
             {
@@ -445,11 +447,11 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             _terminal.WriteLine("⏳ Проверка доступности Zapret...");
 
-            string url = "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.9.9c/zapret-discord-youtube-1.9.9c.zip";
-            string extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
+            string? url = "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.9.9c/zapret-discord-youtube-1.9.9c.zip";
+            string? extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
             Directory.CreateDirectory(extraDir);
 
-            string zipPath = null;
+            string? zipPath = null;
             bool downloaded = false;
 
             try
@@ -488,7 +490,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 }
             }
 
-            string zdyTarget = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
+            string? zdyTarget = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
             _terminal.WriteLine($"⏳ Распаковка в {zdyTarget}...");
 
             try
@@ -498,11 +500,17 @@ namespace PlatformLauncher.Presentation.ViewModels
                     Directory.Delete(zdyTarget, true);
                 }
 
+                if (string.IsNullOrEmpty(zipPath))
+                {
+                    _terminal.WriteLine("❌ Архив не найден!");
+                    return;
+                }
+
                 ZipFile.ExtractToDirectory(zipPath, zdyTarget);
                 NormalizeExtractedFolder(zdyTarget);
                 _terminal.WriteLine("✅ Распаковка завершена");
 
-                string listsPath = null;
+                string? listsPath = null;
                 var listsDirs = Directory.GetDirectories(zdyTarget, "lists", SearchOption.AllDirectories);
                 if (listsDirs.Length > 0)
                 {
@@ -535,18 +543,18 @@ namespace PlatformLauncher.Presentation.ViewModels
             // Если в корне нет файлов и ровно одна папка — поднимаем её содержимое
             if (files.Length == 0 && dirs.Length == 1)
             {
-                string subDir = dirs[0];
+                string? subDir = dirs[0];
                 _terminal.WriteLine($"   ↳ Обнаружена вложенная папка: {Path.GetFileName(subDir)}");
                 _terminal.WriteLine("   ↳ Перемещаю содержимое на уровень выше...");
 
                 // Перемещаем файлы
                 foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
                 {
-                    string relativePath = Path.GetRelativePath(subDir, file);
-                    string destPath = Path.Combine(targetDir, relativePath);
-                    string destDir = Path.GetDirectoryName(destPath);
+                    string? relativePath = Path.GetRelativePath(subDir, file);
+                    string? destPath = Path.Combine(targetDir, relativePath);
+                    string? destDir = Path.GetDirectoryName(destPath);
                     if (!Directory.Exists(destDir))
-                        Directory.CreateDirectory(destDir);
+                        Directory.CreateDirectory(destDir!);
                     File.Move(file, destPath, overwrite: true);
                 }
 
@@ -557,8 +565,8 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private void RunZapret()
         {
-            string zdyDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
-            string generalBat = Path.Combine(zdyDir, "general.bat");
+            string? zdyDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "zdy");
+            string? generalBat = Path.Combine(zdyDir, "general.bat");
 
             if (!File.Exists(generalBat))
             {
@@ -623,7 +631,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private void CheckVenvExists()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string? baseDir = AppDomain.CurrentDomain.BaseDirectory;
             bool exists = Directory.Exists(Path.Combine(baseDir, ".venv")) || Directory.Exists(Path.Combine(baseDir, "venv"));
             IsVenvExists = exists;
         }
@@ -649,7 +657,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 // В свежей версии поиск централизован в PythonEnvironmentManager.
                 // Вызываем единый метод, который внутри проходит все шаги (where, реестр, пути).
-                string systemPython = await _pythonEnvManager.FindSystemPythonAsync();
+                string? systemPython = await _pythonEnvManager.FindSystemPythonAsync();
 
                 if (!string.IsNullOrEmpty(systemPython))
                 {
@@ -698,8 +706,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             _terminal.WriteLine("⏳ Создание виртуального окружения...");
             try
             {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string venvDir = Path.Combine(baseDir, ".venv");
+                string? baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string? venvDir = Path.Combine(baseDir, ".venv");
 
                 var psi = new ProcessStartInfo("python", $"-m venv \"{venvDir}\"")
                 {
@@ -709,17 +717,21 @@ namespace PlatformLauncher.Presentation.ViewModels
                     CreateNoWindow = true
                 };
                 using var p = Process.Start(psi);
+                if (p == null)
+                {
+                    throw new InvalidOperationException("Не удалось запустить процесс создания окружения");
+                }
                 await p.WaitForExitAsync();
                 if (p.ExitCode != 0)
                 {
-                    string err = await p.StandardError.ReadToEndAsync();
+                    string? err = await p.StandardError.ReadToEndAsync();
                     _terminal.WriteLine($"❌ Ошибка создания venv: {err}");
                     return;
                 }
                 _terminal.WriteLine("✅ Venv создан.");
 
-                string pipExe = Path.Combine(venvDir, "Scripts", "pip.exe");
-                string reqPath = Path.Combine(baseDir, "data", "requirements.txt");
+                string? pipExe = Path.Combine(venvDir, "Scripts", "pip.exe");
+                string? reqPath = Path.Combine(baseDir, "data", "requirements.txt");
 
                 bool installSuccess = false;
                 if (File.Exists(reqPath))
@@ -733,11 +745,15 @@ namespace PlatformLauncher.Presentation.ViewModels
                         CreateNoWindow = true
                     };
                     using var pipProc = Process.Start(pipPsi);
+                    if (pipProc == null)
+                    {
+                        throw new InvalidOperationException("Не удалось запустить процесс установки зависимостей");
+                    }
                     await pipProc.WaitForExitAsync();
                     installSuccess = pipProc.ExitCode == 0;
                     if (!installSuccess)
                     {
-                        string err = await pipProc.StandardError.ReadToEndAsync();
+                        string? err = await pipProc.StandardError.ReadToEndAsync();
                         _terminal.WriteLine($"⚠️ Ошибка установки из requirements.txt: {err}");
                     }
                     else
@@ -749,7 +765,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (!installSuccess)
                 {
                     _terminal.WriteLine("⏳ Попытка установки из локальных whl...");
-                    string extraPythonDir = Path.Combine(baseDir, "extra", "python");
+                    string? extraPythonDir = Path.Combine(baseDir, "extra", "python");
                     if (Directory.Exists(extraPythonDir))
                     {
                         string[] whlFiles = Directory.GetFiles(extraPythonDir, "*.whl");
@@ -763,10 +779,14 @@ namespace PlatformLauncher.Presentation.ViewModels
                                 CreateNoWindow = true
                             };
                             using var whlProc = Process.Start(whlPsi);
+                            if (whlProc == null)
+                            {
+                                throw new InvalidOperationException("Не удалось запустить процесс установки зависимостей из extra");
+                            }
                             await whlProc.WaitForExitAsync();
                             if (whlProc.ExitCode != 0)
                             {
-                                string err = await whlProc.StandardError.ReadToEndAsync();
+                                string? err = await whlProc.StandardError.ReadToEndAsync();
                                 _terminal.WriteLine($"⚠️ Ошибка установки {Path.GetFileName(whl)}: {err}");
                             }
                         }
@@ -789,7 +809,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private void LoadThemesFromFolder()
         {
-            string themesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "themes");
+            string? themesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "themes");
 
             LightThemes.Clear();
             DarkThemes.Clear();
@@ -806,7 +826,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
             foreach (var subFolder in new[] { "Light", "Dark" })
             {
-                string folderPath = Path.Combine(themesFolder, subFolder);
+                string? folderPath = Path.Combine(themesFolder, subFolder);
                 if (!Directory.Exists(folderPath))
                     continue;
 
@@ -914,7 +934,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             try
             {
                 IsWarpInstalled = await _warpManager.IsInstalledAsync();
-                string status = await _warpManager.GetStatusAsync();
+                string? status = await _warpManager.GetStatusAsync();
                 IsWarpConnected = status == "connected";
                 WarpStatus = IsWarpConnected ? "подключён" : "отключён";
             }
@@ -951,10 +971,10 @@ namespace PlatformLauncher.Presentation.ViewModels
             try
             {
                 _terminal.WriteLine("⏳ Проверка доступности сервера Cloudflare...");
-                string url = "https://downloads.cloudflareclient.com/v1/download/windows/version/2026.6.822.0";
-                string extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
+                string? url = "https://downloads.cloudflareclient.com/v1/download/windows/version/2026.6.822.0";
+                string? extraDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "extra");
                 Directory.CreateDirectory(extraDir);
-                string msiPath = Path.Combine(extraDir, "WARP.msi");
+                string? msiPath = Path.Combine(extraDir, "WARP.msi");
 
                 bool downloaded = false;
                 try
@@ -998,6 +1018,10 @@ namespace PlatformLauncher.Presentation.ViewModels
                     CreateNoWindow = true
                 };
                 using var p = Process.Start(psi);
+                if (p == null)
+                {
+                    throw new InvalidOperationException("Не удалось запустить процесс установки WARP");
+                }
                 await p.WaitForExitAsync();
 
                 if (p.ExitCode == 0)
@@ -1116,8 +1140,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        protected void OnPropertyChanged([CallerMemberName] string propertyName = null) =>
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

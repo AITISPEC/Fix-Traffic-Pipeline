@@ -78,13 +78,14 @@ namespace PlatformLauncher
             services.AddSingleton<ISessionOrchestrator>(provider =>
             {
                 var pythonManager = provider.GetRequiredService<IPythonProcessManager>();
+                var pythonEnvManager = provider.GetRequiredService<IPythonEnvironmentManager>();
                 var backupManager = provider.GetRequiredService<IBackupManager>();
                 var warpManager = provider.GetRequiredService<IWarpManager>();
                 var processKiller = provider.GetRequiredService<IProcessKiller>();
                 var logger = provider.GetRequiredService<ILogger>();
                 var listsSanitizer = provider.GetRequiredService<IListsSanitizer>();
                 var updateService = provider.GetRequiredService<IUpdateService>();
-                return new SessionOrchestrator(pythonManager, backupManager, warpManager, processKiller, logger, listsSanitizer, updateService);
+                return new SessionOrchestrator(pythonManager, backupManager, warpManager, processKiller, logger, listsSanitizer, updateService, pythonEnvManager);
             });
 
             // Backup и Ports – без gameId
@@ -102,7 +103,7 @@ namespace PlatformLauncher
             services.AddSingleton<ServiceTabViewModel>(provider =>
             {
                 var warpManager = provider.GetRequiredService<IWarpManager>();
-                var networkFixService = provider.GetRequiredService<INetworkFixService>(); // ← ДОБАВЛЕНО
+                var networkFixService = provider.GetRequiredService<INetworkFixService>();
                 var settingsManager = provider.GetRequiredService<ISettingsManager>();
                 var logger = provider.GetRequiredService<ILogger>();
                 var terminal = provider.GetRequiredService<ITerminalOutput>();

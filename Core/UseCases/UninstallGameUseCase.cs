@@ -31,7 +31,7 @@ namespace PlatformLauncher.Core.UseCases
                         updated.Installed = false;
                     _updateService.SavePresetsFile(new PresetsFile { Games = freshPresets });
                 }
-                return (result, null);
+                return (result, string.Empty);
             }
             catch (Exception ex)
             {

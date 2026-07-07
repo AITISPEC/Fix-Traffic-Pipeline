@@ -11,7 +11,7 @@ namespace PlatformLauncher.Infrastructure.Services
     {
         private readonly ILogger _logger;
         private readonly IAppConfigService _appConfigService;
-        private readonly string _settingsPath;
+        private readonly string? _settingsPath;
         private UserSettings _settings = new();
         private bool _isWritable = true; // флаг, что запись возможна
 
@@ -30,7 +30,7 @@ namespace PlatformLauncher.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка инициализации файла настроек: {ex.Message}");
-                _settingsPath = null;
+                _settingsPath = string.Empty;
                 _isWritable = false;
                 _settings = new UserSettings(); // работаем с пустыми настройками в памяти
             }

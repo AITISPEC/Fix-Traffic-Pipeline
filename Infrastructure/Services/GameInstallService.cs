@@ -39,10 +39,10 @@ namespace PlatformLauncher.Infrastructure.Services
 
                 var (success, error) = await _updateService.InstallGameAsync(preset);
                 if (!success)
-                    return (false, error); // early return — не влезает в catch
+                    return (false, error ?? string.Empty);
 
                 progress?.Report($"✅ Конфиг скачан");
-                return (true, null);
+                return (true, string.Empty);
             }
             catch (Exception ex)
             {
@@ -66,7 +66,7 @@ namespace PlatformLauncher.Infrastructure.Services
                     // Конфиг отсутствует или невалиден — скачиваем
                     var (downloadSuccess, downloadError) = await _updateService.InstallGameAsync(preset);
                     if (!downloadSuccess)
-                        return (false, downloadError, null);
+                        return (false, downloadError ?? string.Empty, preset);
 
                     // Перезагружаем конфиг после скачивания
                     config = _updateService.LoadGameConfig(preset.Id);
@@ -94,18 +94,19 @@ namespace PlatformLauncher.Infrastructure.Services
                     }
                     _updateService.SavePresetsFile(new PresetsFile { Games = updatedPresets });
 
-                    return (true, null, preset);
+                    return (true, string.Empty, preset);
                 }
 
                 // Установка правил портов для обычных игр
                 if (config.Ports != null)
                 {
                     progress?.Report("📌 Установка правил портов...");
+                    Action<string>? progressCallback = progress != null ? progress.Report : null;
                     var (portOk, portError) = await _portsManager.AddRulesAsync(
                         config.Ports.Tcp,
                         config.Ports.Udp,
                         preset.Id,
-                        msg => progress.Report(msg));
+                        progressCallback);
 
                     if (portOk)
                         progress?.Report("✅ Правила портов добавлены");
@@ -130,12 +131,12 @@ namespace PlatformLauncher.Infrastructure.Services
                 }
                 _updateService.SavePresetsFile(new PresetsFile { Games = presets });
 
-                return (true, null, preset);
+                return (true, string.Empty, preset);
             }
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка установки: {ex}");
-                return (false, ex.Message, null);
+                return (false, ex.Message, preset);
             }
         }
 
@@ -145,7 +146,7 @@ namespace PlatformLauncher.Infrastructure.Services
             // Прогресс отчёт через Report(IProgress) — не блокирует UI.
             progress?.Report("📌 Удаление правил портов...");
 
-            var (removed, removeError) = await _portsManager.RemoveAllRulesAsync(preset.Id, msg => progress.Report(msg));
+            var (removed, removeError) = await _portsManager.RemoveAllRulesAsync(preset.Id, msg => progress?.Report(msg));
             if (removed)
                 progress?.Report("✅ Правила портов удалены");
             else

@@ -2,6 +2,7 @@
 using PlatformLauncher.Presentation.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
+using System.Diagnostics;
 
 namespace PlatformLauncher.Presentation.Views
 {
@@ -26,12 +27,12 @@ namespace PlatformLauncher.Presentation.Views
                     return;
 
                 var dialog = new DebugRestartDialog(vm.DebugEnabled);
-                dialog.Owner = System.Windows.Application.Current.MainWindow;
+                dialog.Owner = Application.Current.MainWindow;
                 var result = dialog.ShowDialog();
                 if (result == true)
                 {
-                    System.Diagnostics.Process.Start(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName);
-                    System.Windows.Application.Current.Shutdown();
+                    Process.Start(Process.GetCurrentProcess().MainModule!.FileName);
+                    Application.Current.Shutdown();
                 }
             }
         }
@@ -43,7 +44,7 @@ namespace PlatformLauncher.Presentation.Views
                 if (DataContext is ServiceTabViewModel vm)
                 {
                     vm.SelectedTheme = theme;
-                    var mainWindow = System.Windows.Application.Current.MainWindow as MainWindow;
+                    var mainWindow = Application.Current.MainWindow as MainWindow;
                     mainWindow?.ApplyTheme(theme.Id);
                 }
             }

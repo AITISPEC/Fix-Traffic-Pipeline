@@ -212,8 +212,7 @@
 
         <!-- Верхняя панель -->
         <hc:SimplePanel Grid.Row="0" Margin="0,0,0,10" Grid.ColumnSpan="3"
-                        Background="{DynamicResource RegionBrush}"
-                        IsEnabled="{Binding IsNotProcessing}">
+                        Background="{DynamicResource RegionBrush}">
             <Grid>
                 <StackPanel Orientation="Horizontal" Margin="2,0,0,0" HorizontalAlignment="Left">
                     <Button Content="Обновить список" Width="120" Margin="0,3,15,0"
@@ -230,8 +229,7 @@
 
         <!-- TabControl -->
         <TabControl x:Name="MainTabControl" Grid.Row="1" Grid.ColumnSpan="3" 
-                    SelectionChanged="MainTabControl_SelectionChanged"
-                    IsEnabled="{Binding IsNotProcessing}">
+                    SelectionChanged="MainTabControl_SelectionChanged">
             <TabItem Header="Фиксы" Width="83">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -323,7 +321,7 @@
                     </Border>
 
                     <!-- Левая колонка: ListBox + Expander с фильтрами -->
-                    <Grid Grid.Column="0" Grid.Row="1" IsEnabled="{Binding IsNotProcessing}">
+                    <Grid Grid.Column="0" Grid.Row="1">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
@@ -429,7 +427,7 @@
                     </Grid>
 
                     <!-- ПКМ терминал -->
-                    <Grid Grid.Column="1" Margin="10,0,0,0" Grid.RowSpan="2" IsEnabled="{Binding IsNotProcessing}">
+                    <Grid Grid.Column="1" Margin="10,0,0,0" Grid.RowSpan="2">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -542,5 +540,9 @@
                 </ContextMenu>
             </tb:TaskbarIcon.ContextMenu>
         </tb:TaskbarIcon>
+        <Border Grid.Row="0" Grid.RowSpan="3" Grid.ColumnSpan="3"
+                Background="Transparent"
+                IsHitTestVisible="{Binding IsProcessing}"
+                Panel.ZIndex="1000"/>
     </Grid>
 </Window>

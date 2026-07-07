@@ -10,7 +10,7 @@ namespace PlatformLauncher.Infrastructure.Services
             if (string.IsNullOrEmpty(listsPath) || !Directory.Exists(listsPath))
                 return false;
 
-            string parentDir = Path.GetDirectoryName(
+            string? parentDir = Path.GetDirectoryName(
                 listsPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             if (string.IsNullOrEmpty(parentDir))

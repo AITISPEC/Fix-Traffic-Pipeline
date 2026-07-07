@@ -53,7 +53,7 @@ namespace PlatformLauncher.Infrastructure.Configuration
                 var serializer = new SerializerBuilder().Build();
                 var yaml = serializer.Serialize(config);
                 var dir = Path.GetDirectoryName(_configPath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllText(_configPath, yaml);
             }
             catch (Exception ex)

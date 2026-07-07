@@ -23,8 +23,8 @@ namespace PlatformLauncher.Presentation.ViewModels
 {
     public class SortOption
     {
-        public string Id { get; set; }
-        public string DisplayName { get; set; }
+        public string Id { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
     }
 
     public class MainViewModel : INotifyPropertyChanged
@@ -47,9 +47,9 @@ namespace PlatformLauncher.Presentation.ViewModels
         private readonly IAppConfigService _appConfigService;
 
         private string _appVersion = "?.?.?";
-        private GamePreset _selectedGame;
+        private GamePreset? _selectedGame;
         private bool _isAdministrator;
-        private string _listsPath;
+        private string _listsPath = string.Empty;
         private bool _isRunning;
         private string _statusText = "Готов";
         private string _statusBarText = "Загрузка пресетов...";
@@ -63,7 +63,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         private string _searchText = string.Empty;
         private SortOption _selectedSortOption;
 
-        public string ConfigPath => SelectedGame == null ? null :
+        public string? ConfigPath => SelectedGame == null ? null :
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{SelectedGame.Id}.yaml");
 
         public string AppVersion
@@ -74,7 +74,7 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         public ObservableCollection<GamePreset> Games => _gameListService.Games;
 
-        public GamePreset SelectedGame
+        public GamePreset? SelectedGame
         {
             get => _selectedGame;
             set { _selectedGame = value; OnPropertyChanged(); UpdateButtonStates(); }
@@ -332,7 +332,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         public ICommand ClearConsoleCommand { get; }
         public ICommand ShowWindowCommand { get; }
 
-        public ICommand ContextMenuActionCommand
+        public ICommand? ContextMenuActionCommand
         {
             get
             {
@@ -470,10 +470,11 @@ namespace PlatformLauncher.Presentation.ViewModels
                 var unrestored = backupManager.GetUnrestoredBackups();
                 if (unrestored.Count > 0)
                 {
-                    string latest = backupManager.GetLatestUnrestoredBackup();
+                    string? latest = backupManager.GetLatestUnrestoredBackup();
+                    
                     if (latest != null && !string.IsNullOrEmpty(ListsPath) && Directory.Exists(ListsPath))
                     {
-                        string gameId = new DirectoryInfo(Path.GetDirectoryName(latest)).Name;
+                        string gameId = new DirectoryInfo(Path.GetDirectoryName(latest)!).Name;
                         var result = await Application.Current.Dispatcher.InvokeAsync(() =>
                             MessageBox.Show(
                                 $"Обнаружен невосстановленный бэкап для '{gameId}'.\nВосстановить lists? ",
@@ -550,7 +551,7 @@ namespace PlatformLauncher.Presentation.ViewModels
                 FilterInstalled,
                 FilterNotInstalled,
                 FilterCustom,
-                _selectedSortOption?.Id);
+                _selectedSortOption?.Id ?? string.Empty);
 
             var allPresets = _gameListService.Games.ToList();
             FilterHeader = _gameListService.GetFilterHeader(allPresets.Count, Games.Count);
@@ -796,11 +797,10 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        private async Task RunCommandAsync(string command)
+        private async Task RunCommandAsync(string? command)
         {
+            if (string.IsNullOrEmpty(command)) return;
             string result = await _commandRunner.RunCommandAsync(command, msg => _terminal.WriteLine(msg));
-            if (!string.IsNullOrEmpty(result))
-                _terminal.WriteLine(result);
         }
 
         private void ResetFilters()
@@ -832,8 +832,8 @@ namespace PlatformLauncher.Presentation.ViewModels
             return _zapretValidator.IsZapretValid(ListsPath);
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        protected void OnPropertyChanged([CallerMemberName] string propertyName = null) =>
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

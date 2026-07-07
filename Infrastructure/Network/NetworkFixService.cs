@@ -34,7 +34,7 @@ namespace PlatformLauncher.Infrastructure.Network
                 await RunCommandAsync("netsh int ip reset");
 
                 // Определяем основной адаптер
-                string mainAdapter = GetMainNetworkAdapter();
+                string? mainAdapter = GetMainNetworkAdapter();
                 if (!string.IsNullOrEmpty(mainAdapter))
                 {
                     progress?.Invoke($"   Основной адаптер: {mainAdapter}");
@@ -79,7 +79,7 @@ namespace PlatformLauncher.Infrastructure.Network
             }
         }
 
-        private async Task RunCommandAsync(string command)
+        private async Task RunCommandAsync(string? command)
         {
             try
             {
@@ -105,7 +105,7 @@ namespace PlatformLauncher.Infrastructure.Network
             }
         }
 
-        private string GetMainNetworkAdapter()
+        private string? GetMainNetworkAdapter()
         {
             // Попытка 1: через PowerShell
             try

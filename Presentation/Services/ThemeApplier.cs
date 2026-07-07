@@ -16,18 +16,13 @@ using ColorConverter = System.Windows.Media.ColorConverter;
 
 namespace PlatformLauncher.Presentation.Services
 {
-    public class ThemeApplier
+    public class ThemeApplier(IServiceProvider serviceProvider)
     {
-        private readonly IServiceProvider _serviceProvider;
-        private ResourceDictionary _customColorDict;
-        private EasyTerminalControl _terminal;
-        private Window _window;
-        private ThemeItem _currentTheme;
-
-        public ThemeApplier(IServiceProvider serviceProvider)
-        {
-            _serviceProvider = serviceProvider;
-        }
+        private readonly IServiceProvider _serviceProvider = serviceProvider;
+        private ResourceDictionary? _customColorDict;
+        private EasyTerminalControl? _terminal;
+        private Window? _window;
+        private ThemeItem? _currentTheme;
 
         public void Attach(EasyTerminalControl terminal, Window window)
         {

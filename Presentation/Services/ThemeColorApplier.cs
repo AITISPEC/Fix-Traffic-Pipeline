@@ -14,7 +14,7 @@ namespace PlatformLauncher.Presentation.Services
     /// </summary>
     public class ThemeColorApplier
     {
-        private ResourceDictionary _customColorDict;
+        private ResourceDictionary? _customColorDict;
 
         public void ApplyColors(ThemeItem theme)
         {
@@ -109,7 +109,8 @@ namespace PlatformLauncher.Presentation.Services
 
         private void SetBrush(string key, Color color)
         {
-            _customColorDict[key] = new SolidColorBrush(color);
+            if (_customColorDict != null)
+                _customColorDict[key] = new SolidColorBrush(color);
         }
 
         private Color ParseColor(string hex, string fallback)

@@ -115,7 +115,7 @@ namespace PlatformLauncher.Infrastructure.Backup
                 if (!IsBackupRestored(dir) && !IsBackupNoRestored(dir) && !IsBackupSaved(dir))
                     return dir;
             }
-            return null;
+            return string.Empty;
         }
 
         private bool IsBackupSaved(string backupDir)
@@ -183,14 +183,14 @@ namespace PlatformLauncher.Infrastructure.Backup
                 ".saved"
             };
 
-            foreach (string dirPath in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+            foreach (string? dirPath in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
             {
                 string relative = Path.GetRelativePath(source, dirPath);
                 string newDir = Path.Combine(destination, relative);
                 Directory.CreateDirectory(newDir);
             }
 
-            foreach (string filePath in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+            foreach (string? filePath in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
             {
                 string fileName = Path.GetFileName(filePath).ToLowerInvariant();
 
@@ -200,11 +200,11 @@ namespace PlatformLauncher.Infrastructure.Backup
 
                 if (File.Exists(filePath))
                 {
-                    string relative = Path.GetRelativePath(source, filePath);
-                    string newFile = Path.Combine(destination, relative);
+                    string? relative = Path.GetRelativePath(source, filePath);
+                    string? newFile = Path.Combine(destination, relative);
                     try
                     {
-                        string dir = Path.GetDirectoryName(newFile);
+                        string? dir = Path.GetDirectoryName(newFile);
                         if (!string.IsNullOrEmpty(dir))
                             Directory.CreateDirectory(dir);
                         File.Copy(filePath, newFile, true);

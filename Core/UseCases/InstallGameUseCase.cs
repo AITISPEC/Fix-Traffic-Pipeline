@@ -1,7 +1,8 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using PlatformLauncher.Core.Interfaces;
 using PlatformLauncher.Domain.Models;
-using PlatformLauncher.Core.Interfaces;
+using System;
+using System.Threading.Tasks;
+using static HandyControl.Themes.PresetManager;
 
 namespace PlatformLauncher.Core.UseCases
 {
@@ -24,18 +25,18 @@ namespace PlatformLauncher.Core.UseCases
             {
                 var (success, error) = await _gameInstallService.DownloadConfigAsync(preset, progress);
                 if (!success)
-                    return (false, error, null);
+                    return (false, error?? string.Empty, preset);
 
                 var freshPresets = _updateService.LoadPresets();
                 var updated = freshPresets.Find(p => p.Id == preset.Id);
                 if (updated != null)
                     updated.ConfigDownloaded = true;
-                return (true, null, updated);
+                return (true, string.Empty, updated ?? preset);
             }
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка в UseCase скачивания: {ex}");
-                return (false, ex.Message, null);
+                return (false, ex.Message, preset);
             }
         }
 
@@ -45,7 +46,7 @@ namespace PlatformLauncher.Core.UseCases
             {
                 var result = await _gameInstallService.InstallGameAsync(preset, progress);
                 if (!result.Success)
-                    return (false, result.Error, null);
+                    return (false, result.Error ?? string.Empty, preset);
 
                 var freshPresets = _updateService.LoadPresets();
                 var updated = freshPresets.Find(p => p.Id == preset.Id);
@@ -53,12 +54,12 @@ namespace PlatformLauncher.Core.UseCases
                     updated.Installed = true;
                     updated.ConfigDownloaded = true;
                 }
-                return (true, null, updated);
+                return (true, string.Empty, updated ?? preset);
             }
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка в UseCase установки: {ex}");
-                return (false, ex.Message, null);
+                return (false, ex.Message, preset);
             }
         }
     }

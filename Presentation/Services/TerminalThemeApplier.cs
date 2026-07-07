@@ -13,7 +13,7 @@ namespace PlatformLauncher.Presentation.Services
     /// </summary>
     public class TerminalThemeApplier
     {
-        private EasyTerminalControl _terminal;
+        private EasyTerminalControl? _terminal;
 
         public void Attach(EasyTerminalControl terminal)
         {

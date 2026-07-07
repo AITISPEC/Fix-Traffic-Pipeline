@@ -9,19 +9,19 @@ namespace PlatformLauncher.Domain.Models
     {
         [YamlMember(Alias = "app")]
         /// <summary>Настройки версии приложения и времени ожидания остановки процесса Python.</summary>
-        public AppSettings App { get; set; }
+        public AppSettings App { get; set; } = null!;
 
         [YamlMember(Alias = "terminal")]
         /// <summary>Цвета шрифта, размера и ширина колонок в терминальном дисплее (DNS, IP, порт).</summary>
-        public TerminalSettings Terminal { get; set; }
+        public TerminalSettings Terminal { get; set; } = null!;
 
         [YamlMember(Alias = "monitor")]
         /// <summary>Какой статус DNS отслеживать — по умолчанию SYN_SENT (установлен пакет, запрос в сети).</summary>
-        public MonitorSettings Monitor { get; set; }
+        public MonitorSettings Monitor { get; set; } = null!;
 
         [YamlMember(Alias = "logging")]
         /// <summary>Уровень лога (INFO/DEBUG), размер файла до ротации и количество бэкапов (~5 файлов).</summary>
-        public LoggingSettings Logging { get; set; }
+        public LoggingSettings Logging { get; set; } = null!;
 
         [YamlMember(Alias = "selected_theme")]
         /// <summary>Активная тема интерфейса: "fluent-light", "fluent-dark" или пользовательская.</summary>
@@ -29,15 +29,15 @@ namespace PlatformLauncher.Domain.Models
 
         [YamlMember(Alias = "lists")]
         /// <summary>Путь к файлам списков zapret и исключений (ip_file, domain_file, exclude_ip_file).</summary>
-        public ListsConfig Lists { get; set; }
+        public ListsConfig Lists { get; set; } = null!;
 
         [YamlMember(Alias = "cloudflare_domains")]
         /// <summary>Список доменов Cloudflare — если домен в списке, трафик обрабатывается по WARP.</summary>
-        public List<string> CloudflareDomains { get; set; }
+        public List<string> CloudflareDomains { get; set; } = new();
 
         [YamlMember(Alias = "progress_bar")]
         /// <summary>Показывать ли прогресс-бар при установке/удалении пресета (Installing, Uninstalling).</summary>
-        public ProgressBarSettings ProgressBar { get; set; } = new ProgressBarSettings();
+        public ProgressBarSettings ProgressBar { get; set; } = new();
     }
 
     /// <summary><c>app_version</c> — семантическая версия. <c>python_stop_timeout_ms</c> (~2000 мс) обрезает зависания при закрытии.</summary>

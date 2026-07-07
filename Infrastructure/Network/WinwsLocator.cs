@@ -38,18 +38,18 @@ namespace PlatformLauncher.Infrastructure.Network
                     {
                         var processes = Process.GetProcessesByName("winws");
                         if (processes.Length == 0) return null;
-                        string exePath = processes[0].MainModule?.FileName;
+                        string? exePath = processes[0].MainModule?.FileName;
                         if (string.IsNullOrEmpty(exePath)) return null;
                         var dir = Directory.GetParent(exePath);
                         if (dir == null) return null;
                         dir = Directory.GetParent(dir.FullName);
                         if (dir == null) return null;
-                        string listsPath = Path.Combine(dir.FullName, "lists");
+                        string? listsPath = Path.Combine(dir.FullName, "lists");
                         if (!Directory.Exists(listsPath)) return null;
                         if (!Directory.GetFiles(listsPath, "*.txt").Any()) return null;
                         return listsPath;
                     }
-                    catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
+                    catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
                     {
                         _logger.Warning("Нет доступа к процессу winws.");
                         return null;
@@ -77,12 +77,12 @@ namespace PlatformLauncher.Infrastructure.Network
 
                 // 3. Не найдено — возвращаем null (распаковка только по кнопке "Установить Zapret")
                 _logger.Info("winws не найден, папка ./zdy/lists отсутствует. Требуется установка Zapret.");
-                return null;
+                return string.Empty;
             }
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка при поиске lists: {ex.Message}");
-                return null;
+                return string.Empty;
             }
         }
 

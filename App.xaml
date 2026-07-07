@@ -30,6 +30,7 @@
             <SolidColorBrush x:Key="InputBorderBrush" Color="#CDD6F4"/>
             <SolidColorBrush x:Key="SeparatorBrush" Color="#CDD6F4"/>
             <SolidColorBrush x:Key="DisabledForeground" Color="#CDD6F4"/>
+            <SolidColorBrush x:Key="OverlayColor" Color="#80000000"/>
 
 
             <!-- Implicit styles для всех WPF контролов --> 

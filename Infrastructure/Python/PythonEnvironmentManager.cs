@@ -34,10 +34,10 @@ namespace PlatformLauncher.Infrastructure.Python
         {
             if (File.Exists(_venvPython)) return _venvPython;
             if (File.Exists(_pythonExe)) return _pythonExe;
-            return null;
+            return string.Empty;
         }
 
-        private async Task<int> RunProcessAsync(string fileName, string arguments, IProgress<string> progress)
+        private async Task<int> RunProcessAsync(string fileName, string arguments, IProgress<string>? progress)
         {
             var psi = new ProcessStartInfo
             {
@@ -78,21 +78,25 @@ namespace PlatformLauncher.Infrastructure.Python
                 };
 
                 using var p = Process.Start(psi);
-                p.WaitForExit(2000);
-                if (p.ExitCode != 0) return null;
+                string? output = string.Empty;
+                if (p != null)
+                {
+                    p.WaitForExit(2000);
+                    if (p?.ExitCode != 0) return string.Empty;
+                    output = p.StandardOutput.ReadToEnd();
+                }
+                return output.Contains("Python 3.13") ? "python" : string.Empty;
 
-                string output = p.StandardOutput.ReadToEnd();
-                return output.Contains("Python 3.13") ? "python" : null;
             }
             catch (Exception ex)
             {
                 _logger.Warning($"Ошибка проверки системного Python: {ex.Message}");
-                return null;
+                return string.Empty;
             }
         }
 
         /// <summary>Асинхронная инициализация окружения Python: проверяет наличие системного Python → создает venv или распаковывает embed-архив → устанавливает пакеты.</summary>
-        public async Task<bool> EnsureEnvironmentAsync(string appDataDir, IProgress<string> progress)
+        public async Task<bool> EnsureEnvironmentAsync(string? appDataDir, IProgress<string>? progress)
         {
             try
             {
@@ -112,7 +116,7 @@ namespace PlatformLauncher.Infrastructure.Python
                     {
                         progress?.Report("⏳ Создание виртуального окружения (.venv)...");
                         // Экранируем путь для корректной работы с пробелами
-                        var result = await RunProcessAsync($"\"{systemPython}\"", $"-m venv \"{_venvDir}\"", progress);
+                        var result = await RunProcessAsync($"\"{systemPython}\"", $"-m venv \"{_venvDir}\"", progress ?? new Progress<string>());
                         if (result != 0)
                             throw new Exception($"Ошибка создания venv через системный Python. Код: {result}");
 
@@ -120,7 +124,13 @@ namespace PlatformLauncher.Infrastructure.Python
                         progress?.Report("✅ Venv успешно создан.");
                     }
 
-                    await InstallPackagesAsync(venvPythonExe, appDataDir, progress);
+                    if (string.IsNullOrEmpty(appDataDir))
+                        throw new ArgumentException("appDataDir cannot be null or empty", nameof(appDataDir));
+
+                    if (progress != null)
+                        await InstallPackagesAsync(venvPythonExe, appDataDir, progress);
+                    else
+                        await InstallPackagesAsync(venvPythonExe, appDataDir, new Progress<string>());
                     return true;
                 }
                 else
@@ -148,7 +158,13 @@ namespace PlatformLauncher.Infrastructure.Python
                         File.WriteAllText(pthPath, content);
                     }
 
-                    await InstallPackagesAsync(_pythonExe, appDataDir, progress);
+                    if (string.IsNullOrEmpty(appDataDir))
+                        throw new ArgumentException("appDataDir cannot be null or empty", nameof(appDataDir));
+
+                    if (progress != null)
+                        await InstallPackagesAsync(_pythonExe, appDataDir, progress);
+                    else
+                        await InstallPackagesAsync(_pythonExe, appDataDir, new Progress<string>());
                     return true;
                 }
             }
@@ -200,42 +216,15 @@ namespace PlatformLauncher.Infrastructure.Python
             }
         }
 
-        private async Task SetupEmbeddedPythonAsync(string appDataDir, IProgress<string> progress)
-        {
-            string pthPath = Path.Combine(_runtimePythonDir, "python313._pth");
-            if (File.Exists(pthPath))
-            {
-                // .pth-файл — встроенный механизм Python для инициализации путей
-                string content = File.ReadAllText(pthPath);
-
-                // Раскомментируем import site
-                content = content.Replace("#import site", "import site");
-
-                // Добавляем пути к пакетам, если их нет
-                if (!content.Contains("Lib/site-packages"))
-                    content += Environment.NewLine + "Lib/site-packages";
-                if (!content.Contains("Scripts"))
-                    content += Environment.NewLine + "Scripts";
-                if (!content.Contains("../data"))
-                    content += Environment.NewLine + "../data";
-                if (!content.Contains("../data/src"))
-                    content += Environment.NewLine + "../data/src";
-                if (!content.Contains("../data/configs"))
-                    content += Environment.NewLine + "../data/configs";
-
-                File.WriteAllText(pthPath, content);
-            }
-        }
-
         public async Task<string> FindPythonViaWhereQuiet()
         {
-            string registryResult = await FindPythonInRegistry();
-            if (string.IsNullOrEmpty(registryResult)) return null;
+            string? registryResult = await FindPythonInRegistry();
+            if (string.IsNullOrEmpty(registryResult)) return string.Empty;
 
             // Correct async pattern - don't use Task.Run here
             var knownPathResult = await FindPythonInKnownPaths();
 
-            return !string.IsNullOrEmpty(knownPathResult) ? knownPathResult : null;
+            return !string.IsNullOrEmpty(knownPathResult) ? knownPathResult : string.Empty;
         }
 
         private async Task<string> FindPythonInRegistry()
@@ -250,8 +239,10 @@ namespace PlatformLauncher.Infrastructure.Python
                     CreateNoWindow = true
                 };
                 using var p = Process.Start(psi);
+                if (p == null)
+                    return string.Empty;
                 p.WaitForExit();
-                if (p.ExitCode != 0) return null;
+                if (p.ExitCode != 0) return string.Empty;
 
                 string output = p.StandardOutput.ReadToEnd();
                 // Look for Python paths in registry
@@ -259,7 +250,7 @@ namespace PlatformLauncher.Infrastructure.Python
                 int end = output.IndexOf('\\', pos + 1);
                 while (pos >= 0)
                 {
-                    if (end == -1) return null;
+                    if (end == -1) return string.Empty;
 
                     string candidate = output.Substring(pos, end - pos);
                     if (candidate.Contains("python") || candidate.Contains(".exe"))
@@ -272,10 +263,10 @@ namespace PlatformLauncher.Infrastructure.Python
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Registry Python search failed");
-                return null;
+                _logger.Warning($"Registry Python search failed: {ex}");
+                return string.Empty;
             }
-            return null;
+            return string.Empty;
         }
 
         private async Task<string> FindPythonInKnownPaths()
@@ -296,12 +287,12 @@ namespace PlatformLauncher.Infrastructure.Python
                 if (File.Exists(searchPath))
                     return searchPath;
             }
-            return null;
+            return string.Empty;
         }
 
         public event EventHandler? PropertyChanged;
 
-        protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] System.String propertyName = null) =>
+        protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] String? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

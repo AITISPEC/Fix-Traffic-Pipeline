@@ -19,15 +19,15 @@ namespace PlatformLauncher.Domain.Models
     {
         [YamlMember(Alias = "id")]
         /// <summary>Уникальный идентификатор (например, apex, hunt). Используется как ключ для поиска.</summary>
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
 
         [YamlMember(Alias = "name")]
         /// <summary>Человеческое название: "Apex Legends", "Hunt: Showdown" и т.п.</summary>
-        public string Name { get; set; }
+        public string Name { get; set; } = string.Empty;
 
         [YamlMember(Alias = "config_url")]
         /// <summary>URL пресета на сервере синхронизации (опционально, для апдейтов).</summary>
-        public string ConfigUrl { get; set; }
+        public string ConfigUrl { get; set; } = string.Empty;
 
         [YamlMember(Alias = "target_processes")]
         /// <summary>Названия процессов/исполняемых, за которые перехватывать DNS.</summary>
@@ -98,9 +98,10 @@ namespace PlatformLauncher.Domain.Models
             }
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
+
         /// <summary>Трёхадресное событие для связки ViewModel ↔ GamePreset (MVVM).</summary>
-        protected void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

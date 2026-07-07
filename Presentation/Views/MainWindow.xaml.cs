@@ -14,19 +14,20 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace PlatformLauncher.Presentation.Views
 {
     public partial class MainWindow : Window
     {
         private readonly IServiceProvider _serviceProvider;
-        private ISessionOrchestrator _sessionOrchestrator;
-        private ServiceTabViewModel _serviceTabViewModel;
         private readonly ITerminalOutput _terminal;
         private readonly IThemeService _themeService;
-        private delegate IntPtr SubClassProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr uIdSubclass, IntPtr dwRefData);
+        private ISessionOrchestrator _sessionOrchestrator;
+        private ServiceTabViewModel _serviceTabViewModel;
         private IntPtr _terminalHwnd;
-        private SubClassProcDelegate _subclassDelegate;
+        private delegate IntPtr SubClassProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr uIdSubclass, IntPtr dwRefData);
+        private SubClassProcDelegate? _subclassDelegate;
         private const uint SUBCLASS_ID = 1;
         private const uint WM_RBUTTONUP = 0x0205;
         private bool _initialConsoleCleared = false;
@@ -86,7 +87,7 @@ namespace PlatformLauncher.Presentation.Views
             }
 
             _sessionOrchestrator.SetAskUserCallback(AskUserToSaveBackup);
-            _serviceTabViewModel.ListsPath = (DataContext as MainViewModel)?.ListsPath;
+            _serviceTabViewModel.ListsPath = (DataContext as MainViewModel)?.ListsPath ?? string.Empty;
             _terminal = terminal;
 
             if (viewModel != null)
@@ -115,8 +116,8 @@ namespace PlatformLauncher.Presentation.Views
             TrayIcon.Visibility = Visibility.Visible;
 
             var settingsManager = _serviceProvider.GetRequiredService<ISettingsManager>();
-            string savedThemeId = settingsManager.GetTheme()?.Trim();
-            ThemeItem themeToApply = null;
+            string? savedThemeId = settingsManager.GetTheme()?.Trim();
+            ThemeItem? themeToApply = null;
 
             if (!string.IsNullOrEmpty(savedThemeId))
                 themeToApply = _serviceTabViewModel.AllThemes.FirstOrDefault(t => t.Id.Equals(savedThemeId, StringComparison.OrdinalIgnoreCase));
@@ -130,7 +131,7 @@ namespace PlatformLauncher.Presentation.Views
                 _themeService.ApplyTheme(themeToApply.Id, _serviceTabViewModel.AllThemes);
             }
             UpdateClearButtonVisibility();
-            viewModel.ClearConsole();
+            viewModel?.ClearConsole();
         }
 
         private void UpdateSessionLock(bool isRunning)
@@ -245,7 +246,7 @@ namespace PlatformLauncher.Presentation.Views
         {
             return await Dispatcher.InvokeAsync(() =>
             {
-                var result = System.Windows.MessageBox.Show(
+                var result = MessageBox.Show(
                     "Сохранить результат фикса? (Бэкап не будет восстановлен)",
                     "Сохранение результата",
                     MessageBoxButton.YesNo,
@@ -254,18 +255,22 @@ namespace PlatformLauncher.Presentation.Views
             });
         }
 
-        private void ListBox_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void ListBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is System.Windows.Controls.ListBox listBox)
+            if (sender is ListBox listBox)
             {
-                var listBoxItem = FindVisualParent<System.Windows.Controls.ListBoxItem>(e.OriginalSource as DependencyObject);
-                if (listBoxItem == null)
+                var dependencyObject = e.OriginalSource as DependencyObject;
+                if (dependencyObject != null)
                 {
-                    listBox.SelectedItem = null;
+                    var listBoxItem = FindVisualParent<ListBoxItem>(dependencyObject);
+                    if (listBoxItem == null)
+                    {
+                        listBox.SelectedItem = null;
 
-                    // Убираем фокус из TextBox поиска при клике по пустому месту
-                    Keyboard.ClearFocus();
-                    FocusManager.SetFocusedElement(FocusManager.GetFocusScope(listBox), null);
+                        // Убираем фокус из TextBox поиска при клике по пустому месту
+                        Keyboard.ClearFocus();
+                        FocusManager.SetFocusedElement(FocusManager.GetFocusScope(listBox), null);
+                    }
                 }
             }
         }
@@ -294,9 +299,9 @@ namespace PlatformLauncher.Presentation.Views
 
         private void ListBox_PreviewMouseRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (sender is System.Windows.Controls.ListBox listBox)
+            if (sender is ListBox listBox && e.OriginalSource is DependencyObject source)
             {
-                var listBoxItem = FindVisualParent<System.Windows.Controls.ListBoxItem>(e.OriginalSource as DependencyObject);
+                var listBoxItem = FindVisualParent<ListBoxItem>(source);
                 if (listBoxItem != null)
                 {
                     listBoxItem.IsSelected = true;
@@ -383,19 +388,19 @@ namespace PlatformLauncher.Presentation.Views
             }
         }
 
-        private T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        private T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
         {
-            DependencyObject current = System.Windows.Media.VisualTreeHelper.GetParent(child);
+            DependencyObject current = VisualTreeHelper.GetParent(child);
             while (current != null)
             {
                 if (current is T found)
                     return found;
-                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+                current = VisualTreeHelper.GetParent(current);
             }
             return null;
         }
 
-        private void RootGrid_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void RootGrid_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (FiltersExpander == null || !FiltersExpander.IsExpanded)
                 return;
@@ -416,7 +421,7 @@ namespace PlatformLauncher.Presentation.Views
             {
                 if (current == parent)
                     return true;
-                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+                current = VisualTreeHelper.GetParent(current);
             }
             return false;
         }

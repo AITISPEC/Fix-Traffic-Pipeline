@@ -23,8 +23,8 @@ namespace PlatformLauncher.AppHost
         {
             AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
             {
-                string assemblyName = new AssemblyName(args.Name).Name;
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName + ".dll");
+                string? assemblyName = new AssemblyName(args.Name).Name;
+                string? path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName + ".dll");
                 if (File.Exists(path))
                     return Assembly.LoadFrom(path);
                 return null;
@@ -41,7 +41,7 @@ namespace PlatformLauncher.AppHost
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             var ex = e.ExceptionObject as Exception;
-            DebugLogger.WriteException("UnhandledException", ex);
+            DebugLogger.WriteException("UnhandledException", ex!);
             MessageBox.Show($"Критическая ошибка: {ex?.Message}\n\n{ex?.StackTrace}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
@@ -58,8 +58,8 @@ namespace PlatformLauncher.AppHost
 
             AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
             {
-                string assemblyName = new AssemblyName(args.Name).Name;
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName + ".dll");
+                string? assemblyName = new AssemblyName(args.Name).Name;
+                string? path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "libs", assemblyName + ".dll");
                 if (File.Exists(path))
                     return Assembly.LoadFrom(path);
                 return null;

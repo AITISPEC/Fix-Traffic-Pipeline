@@ -19,8 +19,8 @@ namespace PlatformLauncher.Presentation.Services
         private readonly HandyControlThemeManager _hcThemeManager;
         private readonly TerminalScrollBarStyler _scrollBarStyler;
         private readonly IAppConfigService _appConfigService;
-        private ThemeItem _currentTheme;
-        private Window _window;
+        private ThemeItem? _currentTheme;
+        private Window? _window;
 
         public ThemeService(
             ThemeColorApplier colorApplier,

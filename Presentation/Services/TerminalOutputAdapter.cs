@@ -8,7 +8,7 @@ namespace PlatformLauncher.Presentation.Services
 {
     public class TerminalOutputAdapter : ITerminalOutput
     {
-        private EasyTerminalControl _terminal;
+        private EasyTerminalControl? _terminal;
 
         public void AttachTerminal(EasyTerminalControl terminal)
         {

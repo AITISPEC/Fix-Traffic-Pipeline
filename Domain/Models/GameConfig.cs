@@ -9,39 +9,39 @@ namespace PlatformLauncher.Domain.Models
     {
         [YamlMember(Alias = "target_processes")]
         /// <summary>Процессы (например, apex.exe): если <c>check_path: true</c> — фильтр по полному пути к исполняемому файлу.</summary>
-        public List<TargetProcess> TargetProcesses { get; set; }
+        public List<TargetProcess> TargetProcesses { get; set; } = new();
 
         [YamlMember(Alias = "cloudflare_domains")]
         /// <summary>Если домен из этого списка — трафик обрабатывается по WARP (MASQUE).</summary>
-        public List<string> CloudflareDomains { get; set; }
+        public List<string> CloudflareDomains { get; set; } = new();
 
         [YamlMember(Alias = "include_domains")]
         /// <summary><c>true</c> — добавлять эти домены в списки zapret.</summary>
-        public List<string> IncludeDomains { get; set; }
+        public List<string> IncludeDomains { get; set; } = new();
 
         [YamlMember(Alias = "exclude_domains")]
         /// <summary><c>true</c> — не добавлять эти домены (например, обновления клиента).</summary>
-        public List<string> ExcludeDomains { get; set; }
+        public List<string> ExcludeDomains { get; set; } = new();
 
         [YamlMember(Alias = "include_ips")]
         /// <summary><c>true</c> — добавлять IP в список обхода.</summary>
-        public List<string> IncludeIps { get; set; }
+        public List<string> IncludeIps { get; set; } = new();
 
         [YamlMember(Alias = "exclude_ips")]
         /// <summary><c>true</c> — исключать из правил.</summary>
-        public List<string> ExcludeIps { get; set; }
+        public List<string> ExcludeIps { get; set; } = new();
 
         [YamlMember(Alias = "pass_ips")]
         /// <summary><c>true</c> — разрешить через фаервол, но не добавлять в списки обхода DPI.</summary>
-        public List<string> PassIps { get; set; }
+        public List<string> PassIps { get; set; } = new();
 
         [YamlMember(Alias = "ports")]
         /// <summary>Порт/диапазон портов для применения правил (например, TCP 80, UDP 53).</summary>
-        public PortsConfig Ports { get; set; }
+        public PortsConfig Ports { get; set; } = null!;
 
         [YamlMember(Alias = "lists")]
         /// <summary>Путь к файлам списков: ip_file, domain_file — файлы с IP/доменами для zapret.</summary>
-        public ListsConfig Lists { get; set; }
+        public ListsConfig Lists { get; set; } = null!;
 
         [YamlMember(Alias = "scan_interval")]
         /// <summary>Интервал сканирования в секундах (например, 5.0).</summary>
@@ -61,23 +61,23 @@ namespace PlatformLauncher.Domain.Models
 
         [YamlMember(Alias = "dns_resolve_statuses")]
         /// <summary>Какой статус DNS отслеживать (SYN_SENT, ESTABLISHED … CLOSE_WAIT).</summary>
-        public List<string> DnsResolveStatuses { get; set; }
+        public List<string> DnsResolveStatuses { get; set; } = new();
 
         [YamlMember(Alias = "dns_ignore_statuses")]
         /// <summary><c>true</c> — игнорировать эти статусы в логировании.</summary>
-        public List<string> DnsIgnoreStatuses { get; set; }
+        public List<string> DnsIgnoreStatuses { get; set; } = new();
 
         [YamlMember(Alias = "console_output_statuses")]
         /// <summary><c>true</c> — выводить эти статусы в терминал (зелёный/жёлтый).</summary>
-        public List<string> ConsoleOutputStatuses { get; set; }
+        public List<string> ConsoleOutputStatuses { get; set; } = new();
 
         [YamlMember(Alias = "console_ignore_statuses")]
         /// <summary><c>true</c> — не показывать в терминале.</summary>
-        public List<string> ConsoleIgnoreStatuses { get; set; }
+        public List<string> ConsoleIgnoreStatuses { get; set; } = new();
 
         [YamlMember(Alias = "console")]
         /// <summary>Ширина колонок вывода для UI-терминала (process, ip, port).</summary>
-        public ConsoleConfig Console { get; set; }
+        public ConsoleConfig Console { get; set; } = null!;
 
         [YamlMember(Alias = "color_console")]
         /// <summary><c>true</c> — цветной вывод в терминале.</summary>
@@ -89,7 +89,7 @@ namespace PlatformLauncher.Domain.Models
 
         [YamlMember(Alias = "highlight_style")]
         /// <summary>Стиль подсветки для UI-терминала (BRIGHT_WHITE).</summary>
-        public string HighlightStyle { get; set; }
+        public string HighlightStyle { get; set; } = string.Empty;
 
         [YamlMember(Alias = "warp_supported")]
         /// <summary><c>true</c>, если игра поддерживает Cloudflare WARP — флаг для UI-фильтрации.</summary>
@@ -101,14 +101,14 @@ namespace PlatformLauncher.Domain.Models
 
         [YamlMember(Alias = "list_rules")]
         /// <summary><c>dict</c>: уникальные правила zapret для доменов/IP (инъекция в списки — action: add|remove).</summary>
-        public Dictionary<string, ListRule> ListRules { get; set; }
+        public Dictionary<string, ListRule> ListRules { get; set; } = new();
     }
 
     /// <summary><c>Name</c> — процесс (apex.exe), <c>check_path: true</c> проверяет полный путь к исполняемому.</summary>
     public class TargetProcess
     {
         [YamlMember(Alias = "name")]
-        public string Name { get; set; }
+        public string Name { get; set; } = string.Empty;
 
         [YamlMember(Alias = "check_path")]
         /// <summary><c>true</c> — считать только процесс с точным путём (например, C:\Games\apex.exe).</summary>
@@ -120,11 +120,11 @@ namespace PlatformLauncher.Domain.Models
     {
         [YamlMember(Alias = "tcp")]
         /// <summary>Протоколы TCP — список объектов (порт, например).</summary>
-        public List<object> Tcp { get; set; }
+        public List<object> Tcp { get; set; } = new();
 
         [YamlMember(Alias = "udp")]
         /// <summary>Протоколы UDP — список объектов.</summary>
-        public List<object> Udp { get; set; }
+        public List<object> Udp { get; set; } = new();
     }
 
     /// <summary><c>ip_file</c> — список IP, <c>domain_file</c> — список доменов, <c>general_domain_file</c> — общие.</summary>
@@ -132,24 +132,23 @@ namespace PlatformLauncher.Domain.Models
     {
         [YamlMember(Alias = "ip_file")]
         /// <summary>Путь к файлу с IP-адресами для применения правил zapret.</summary>
-        public string IpFile { get; set; }
+        public string IpFile { get; set; } = string.Empty;
 
         [YamlMember(Alias = "domain_file")]
         /// <summary>Путь к файлу с доменами для DPI bypass.</summary>
-        public string DomainFile { get; set; }
+        public string DomainFile { get; set; } = string.Empty;
 
         [YamlMember(Alias = "general_domain_file")]
         /// <summary>Общий файл доменов — используется при запуске через службу.</summary>
-        public string GeneralDomainFile { get; set; }
+        public string GeneralDomainFile { get; set; } = string.Empty;
 
         [YamlMember(Alias = "exclude_ip_file")]
         /// <summary>Исключения по IP (исключить из правил).</summary>
-        public string ExcludeIpFile { get; set; }
+        public string ExcludeIpFile { get; set; } = string.Empty;
 
         [YamlMember(Alias = "exclude_domain_file")]
         /// <summary>Исключения по домену.</summary>
-        public string ExcludeDomainFile { get; set; }
-
+        public string ExcludeDomainFile { get; set; } = string.Empty;
     }
 
     /// <summary><c>max_proc_width</c> — ширина колонки имени процесса в UI (например, 24 символа).</summary>
@@ -177,10 +176,10 @@ namespace PlatformLauncher.Domain.Models
     {
         [YamlMember(Alias = "action")]
         /// <summary>"add" | "remove" — добавить или удалить правило из списка zapret.</summary>
-        public string Action { get; set; }
+        public string Action { get; set; } = string.Empty;
 
         [YamlMember(Alias = "target")]
         /// <summary>Целевой IP/домен для правила (например, 1.2.3.4).</summary>
-        public string Target { get; set; }
+        public string Target { get; set; } = string.Empty;
     }
 }

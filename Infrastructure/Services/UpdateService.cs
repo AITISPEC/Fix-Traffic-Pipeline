@@ -52,9 +52,10 @@ namespace PlatformLauncher.Infrastructure.Services
             try
             {
                 var serializer = new SerializerBuilder().Build();
-                var yaml = serializer.Serialize(presets);
-                string dir = Path.GetDirectoryName(_presetsPath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var yaml = serializer?.Serialize(presets);
+                string? dir = Path.GetDirectoryName(_presetsPath);
+                if (dir != null)
+                    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllText(_presetsPath, yaml);
                 _logger.Info($"presets.yaml сохранён ({presets.Games.Count} игр)");
             }
@@ -88,7 +89,10 @@ namespace PlatformLauncher.Infrastructure.Services
                 {
                     if (!allGames.Any(g => g.Id == id))
                     {
-                        GameConfig config;
+                        if (string.IsNullOrEmpty(id))
+                            continue;
+
+                        GameConfig? config;
                         try
                         {
                             config = LoadGameConfig(id);
@@ -105,7 +109,7 @@ namespace PlatformLauncher.Infrastructure.Services
                             {
                                 Id = id,
                                 Name = id,
-                                ConfigUrl = null,
+                                ConfigUrl = string.Empty,
                                 WarpSupported = config.WarpSupported ?? false,
                                 Version = config.Version ?? 1,
                                 Installed = true
@@ -210,7 +214,7 @@ namespace PlatformLauncher.Infrastructure.Services
                         localPreset.Installed = false;
                         SavePresetsFile(presetsFile);
                     }
-                    return (true, null);
+                    return (true, string.Empty);
                 }
 
                 _logger.Info($"Загрузка конфига {preset.Name} с {preset.ConfigUrl}");
@@ -247,7 +251,7 @@ namespace PlatformLauncher.Infrastructure.Services
                 }
 
                 _logger.Info($"Скачивание {preset.Id} завершено успешно");
-                return (true, null);
+                return (true, string.Empty);
             }
             catch (Exception ex)
             {
@@ -272,8 +276,8 @@ namespace PlatformLauncher.Infrastructure.Services
 
         public GameConfig LoadGameConfig(string gameId)
         {
-            string configPath = Path.Combine(_configsFolder, $"{gameId}.yaml");
-            if (!File.Exists(configPath)) return null;
+            string? configPath = Path.Combine(_configsFolder, $"{gameId}.yaml");
+            if (!File.Exists(configPath)) return null!;
             try
             {
                 var yaml = File.ReadAllText(configPath);
@@ -299,7 +303,7 @@ namespace PlatformLauncher.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.Error($"Ошибка загрузки конфига {gameId}: {ex.Message}");
-                return null;
+                return null!;
             }
         }
 
@@ -331,7 +335,7 @@ namespace PlatformLauncher.Infrastructure.Services
             return presets.Any(p => p.IsUserPreset && p.Id == id);
         }
 
-        public string GetUserPresetId(string presetName)
+        public string GetUserPresetId(string? presetName)
         {
             var presets = LoadPresets();
             foreach (var p in presets)
@@ -339,7 +343,7 @@ namespace PlatformLauncher.Infrastructure.Services
                 if (!p.IsUserPreset && string.Equals(p.Name, presetName, StringComparison.OrdinalIgnoreCase))
                     return p.Id;
             }
-            return null;
+            return string.Empty;
         }
 
         // Пункт 4: метод для получения статуса установки из app_config.yaml

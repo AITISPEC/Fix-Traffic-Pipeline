@@ -32,7 +32,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                         // Double-check pattern: если процесс уже завершён между проверкой и Kill(), не пытаемся убить снова.
                         if (proc.HasExited) continue;
 
-                        string fileName = proc.MainModule?.FileName;
+                        string? fileName = proc.MainModule?.FileName;
                         // Идентификация процесса через .venv в имени модуля — гарантирует, что это наше окружение.
                         if (!string.IsNullOrEmpty(fileName) && fileName.Contains(".venv", StringComparison.OrdinalIgnoreCase))
                         {
@@ -62,7 +62,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
                     {
                         if (proc.HasExited) continue;
 
-                        string exePath = proc.MainModule?.FileName;
+                        string? exePath = proc.MainModule?.FileName;
                         // Точное совпадение по пути — гарантируем, что убиваем наш winws.exe.
                         if (string.Equals(exePath, expectedPath, StringComparison.OrdinalIgnoreCase))
                         {

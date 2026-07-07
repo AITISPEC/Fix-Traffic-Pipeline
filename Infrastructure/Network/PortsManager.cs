@@ -25,7 +25,7 @@ namespace PlatformLauncher.Infrastructure.Network
             List<object> tcpPorts,
             List<object> udpPorts,
             string gameId,
-            Action<string> progressCallback = null)
+            Action<string>? progressCallback = null)
         {
             try
             {
@@ -37,7 +37,7 @@ namespace PlatformLauncher.Infrastructure.Network
                 {
                     foreach (var port in tcpPorts)
                     {
-                        string portStr = port.ToString();
+                        string portStr = port.ToString() ?? throw new InvalidOperationException("Port cannot be null");
                         _logger.Info($"Добавление TCP {portStr} для {gameId}");
                         progressCallback?.Invoke($"   TCP {portStr}...");
                         await AddSingleRuleAsync(portStr, "TCP", gameId);
@@ -50,7 +50,7 @@ namespace PlatformLauncher.Infrastructure.Network
                 {
                     foreach (var port in udpPorts)
                     {
-                        string portStr = port.ToString();
+                        string portStr = port.ToString() ?? throw new InvalidOperationException("Port cannot be null");
                         _logger.Info($"Добавление UDP {portStr} для {gameId}");
                         progressCallback?.Invoke($"   UDP {portStr}...");
                         await AddSingleRuleAsync(portStr, "UDP", gameId);
@@ -61,7 +61,7 @@ namespace PlatformLauncher.Infrastructure.Network
 
                 _logger.Info($"Все правила портов для {gameId} добавлены");
                 progressCallback?.Invoke("✅ Правила портов добавлены");
-                return (true, null);
+                return (true, string.Empty);
             }
             catch (Exception ex)
             {
@@ -73,7 +73,7 @@ namespace PlatformLauncher.Infrastructure.Network
 
         public async Task<(bool Success, string Error)> RemoveAllRulesAsync(
             string gameId,
-            Action<string> progressCallback = null)
+            Action<string>? progressCallback = null)
         {
             try
             {
@@ -83,7 +83,7 @@ namespace PlatformLauncher.Infrastructure.Network
                 _logger.Info($"PowerShell: {args}");
                 await RunPowerShellAsync(args);
                 progressCallback?.Invoke("✅ Все правила удалены");
-                return (true, null);
+                return (true, string.Empty);
             }
             catch (Exception ex)
             {

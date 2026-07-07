@@ -5,6 +5,6 @@ namespace PlatformLauncher.Core.Interfaces
 {
     public interface ICommandRunnerService
     {
-        Task<string> RunCommandAsync(string command, Action<string> progressCallback = null);
+        Task<string> RunCommandAsync(string command, Action<string>? progressCallback = null);
     }
 }

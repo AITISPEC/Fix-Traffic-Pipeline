@@ -11,22 +11,23 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
     public class SessionOrchestrator : ISessionOrchestrator
     {
         private readonly IPythonProcessManager _pythonManager;
+        private readonly IPythonEnvironmentManager _pythonEnvManager;
         private readonly IBackupManager _backupManager;
         private readonly IWarpManager _warpManager;
         private readonly IProcessKiller _processKiller;
         private readonly ILogger _logger;
         private readonly IListsSanitizer _listsSanitizer;
         private readonly IUpdateService _updateService;
-        private string _currentBackupDir;
+        private string _currentBackupDir = string.Empty;
+        private string _currentListsPath = string.Empty;
         private bool _backupRestored;
         private bool _warpStartedByUs;
-        private string _currentListsPath;
         private bool _sessionEndedRaised;
         private bool _stopRequested = false;
-        private Func<string, Task<bool>> _askUserCallback;
+        private Func<string, Task<bool>>? _askUserCallback;
 
-        public event Action<string> OutputReceived;
-        public event Action<bool> SessionEnded;
+        public event Action<string>? OutputReceived;
+        public event Action<bool>? SessionEnded;
 
         // Лейбл IsRunning считывает _pythonManager.IsRunning — синхронно без блокировок.
         public bool IsRunning => _pythonManager.IsRunning;
@@ -41,7 +42,8 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             IProcessKiller processKiller,
             ILogger logger,
             IListsSanitizer listsSanitizer,
-            IUpdateService updateService
+            IUpdateService updateService,
+            IPythonEnvironmentManager pythonEnvManager
         )
         {
             _pythonManager = pythonManager;
@@ -51,6 +53,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             _logger = logger;
             _listsSanitizer = listsSanitizer;
             _updateService = updateService;
+            _pythonEnvManager = pythonEnvManager;
 
             // Привязываем делегаты событий Python-менеджера:
             // — OutputReceived → перенаправляем дальше в UI;
@@ -64,25 +67,50 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         {
             if (!monitorOnly)
             {
-                _sessionEndedRaised = false;
-                _stopRequested = false;
-                _currentListsPath = listsPath;
-                _backupRestored = false;
-                // Создаём бэкап папки lists: ./backup/{gameId}/lists_{timestamp}/.
-                _currentBackupDir = await _backupManager.CreateBackupAsync(listsPath, gameId);
-                OutputReceived?.Invoke($"✅ Бэкап листов создан\n");
+                // 1. Валидация Python
+                string pythonExe = _pythonEnvManager.GetVenvPythonPath();
+                if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
+                {
+                    OutputReceived?.Invoke("❌ Python не найден. Перейдите в Сервис -> Python");
+                    throw new Exception("Python validation failed");
+                }
 
-                // Санация — фильтрация записей по include/exclude спискам из config.yaml:
+                // 2. Валидация скрипта
+                string monitorScript = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "monitor.py");
+                if (!File.Exists(monitorScript))
+                {
+                    OutputReceived?.Invoke("❌ Скрипт monitor.py не найден");
+                    throw new Exception("Monitor script not found");
+                }
+
+                // 3. Валидация lists
+                if (string.IsNullOrEmpty(listsPath) || !Directory.Exists(listsPath))
+                {
+                    OutputReceived?.Invoke("❌ Папка lists не найдена");
+                    throw new Exception("Lists path validation failed");
+                }
+
+                // 4. Валидация config
                 var config = _updateService.LoadGameConfig(gameId);
-                if (config != null)
+                if (config == null)
+                {
+                    OutputReceived?.Invoke($"❌ Конфиг {gameId} не найден или невалиден");
+                    OutputReceived?.Invoke($"⚠️ Cанация пропущена.");
+                    throw new Exception("Config validation failed");
+                }
+                // Санация — фильтрация записей по include/exclude спискам из config.yaml:
+                else
                 {
                     _listsSanitizer.Sanitize(listsPath, config);
                     OutputReceived?.Invoke("✅ Санация и начальное заполнение списков выполнены");
                 }
-                else
-                {
-                    OutputReceived?.Invoke($"⚠️ Конфиг для {gameId} не найден, санация пропущена.");
-                }
+
+                _sessionEndedRaised = false;
+                _stopRequested = false;
+                _backupRestored = false;
+                _currentListsPath = listsPath;
+                _currentBackupDir = await _backupManager.CreateBackupAsync(listsPath, gameId);
+                OutputReceived?.Invoke($"✅ Бэкап листов создан\n");
             }
 
             _warpStartedByUs = false;

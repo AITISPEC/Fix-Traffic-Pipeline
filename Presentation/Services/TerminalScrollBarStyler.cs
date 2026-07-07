@@ -18,9 +18,9 @@ namespace PlatformLauncher.Presentation.Services
     /// </summary>
     public class TerminalScrollBarStyler
     {
-        private EasyTerminalControl _terminal;
-        private Window _window;
-        private ThemeItem _currentTheme;
+        private EasyTerminalControl? _terminal;
+        private Window? _window;
+        private ThemeItem? _currentTheme;
 
         public void Attach(EasyTerminalControl terminal, Window window)
         {

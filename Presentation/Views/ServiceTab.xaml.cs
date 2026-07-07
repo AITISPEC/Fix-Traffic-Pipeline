@@ -35,7 +35,7 @@ namespace PlatformLauncher.Presentation.Views
             {
                 if (tabControl.SelectedItem is TabItem selectedTab)
                 {
-                    string header = selectedTab.Header?.ToString();
+                    string? header = selectedTab.Header?.ToString();
                     if (header == "WARP" || header == "ZDY")
                     {
                         vm.StartWarpStatusMonitoring();

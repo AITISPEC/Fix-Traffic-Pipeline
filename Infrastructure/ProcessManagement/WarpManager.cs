@@ -49,7 +49,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             var response = await client.GetAsync(WARP_URL, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
 
-            string fileName = null;
+            string? fileName = null;
             if (response.Content.Headers.ContentDisposition != null)
             {
                 fileName = response.Content.Headers.ContentDisposition.FileNameStar ??
