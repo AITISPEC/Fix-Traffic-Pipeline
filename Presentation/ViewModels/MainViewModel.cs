@@ -1,23 +1,22 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Win32;
 using PlatformLauncher.Core.Interfaces;
 using PlatformLauncher.Core.UseCases;
 using PlatformLauncher.Domain.Models;
-using PlatformLauncher.Infrastructure.Configuration;
 using PlatformLauncher.Presentation.Commands;
 using PlatformLauncher.Presentation.Views;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Security.Principal;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace PlatformLauncher.Presentation.ViewModels
 {
@@ -44,7 +43,8 @@ namespace PlatformLauncher.Presentation.ViewModels
         private readonly ITerminalOutput _terminal;
         private readonly IServiceProvider _serviceProvider;
         private readonly ISessionOrchestrator _sessionOrchestrator;
-        private readonly IAppConfigService _appConfigService;
+        private readonly IUpdateService _updateService;
+        private readonly IPortsManager _portsManager;
 
         private string _appVersion = "?.?.?";
         private GamePreset? _selectedGame;
@@ -60,24 +60,37 @@ namespace PlatformLauncher.Presentation.ViewModels
         private bool _pythonValidationMessageShown = false;
         private bool _isInstalling = false;
         private bool _isUninstalling = false;
+        private bool _isPortsProcessing = false;
         private string _searchText = string.Empty;
         private SortOption _selectedSortOption;
+        private bool _listsPathWarningShown = false;
 
-        public string? ConfigPath => SelectedGame == null ? null :
+        private readonly Dictionary<string, (bool HasRules, DateTime CheckedAt)> _portsStatusCache = new();
+        private const int CacheTtlSeconds = 3;
+
+        public string? ConfigPath => SelectedGame == null || string.IsNullOrEmpty(SelectedGame.Id) ? null :
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{SelectedGame.Id}.yaml");
 
-        public string AppVersion
-        {
-            get => _appVersion;
-            set { _appVersion = value; OnPropertyChanged(); }
-        }
-
+        public string AppVersion { get => _appVersion; set { _appVersion = value; OnPropertyChanged(); } }
         public ObservableCollection<GamePreset> Games => _gameListService.Games;
+
+        private bool _isPythonValid;
+        public bool IsPythonValid
+        {
+            get => _isPythonValid;
+            set { _isPythonValid = value; OnPropertyChanged(); }
+        }
 
         public GamePreset? SelectedGame
         {
             get => _selectedGame;
-            set { _selectedGame = value; OnPropertyChanged(); UpdateButtonStates(); }
+            set
+            {
+                if (_selectedGame == value) return;
+                _selectedGame = value;
+                OnPropertyChanged();
+                UpdateButtonStates();
+            }
         }
 
         public bool IsAdministrator
@@ -89,12 +102,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         public string ListsPath
         {
             get => _listsPath;
-            set
-            {
-                if (_listsPath == value) return;
-                _listsPath = value;
-                OnPropertyChanged();
-            }
+            set { if (_listsPath != value) { _listsPath = value; OnPropertyChanged(); } }
         }
 
         private bool _isProcessing;
@@ -106,12 +114,13 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (_isProcessing != value)
                 {
                     _isProcessing = value;
-                    OnPropertyChanged(nameof(IsProcessing));
+                    OnPropertyChanged();
                     OnPropertyChanged(nameof(IsNotProcessing));
-                    UpdateButtonStates(); // Обновит все CanStart, CanMonitor, CanInstall и т.д.
+                    UpdateButtonStates();
                 }
             }
         }
+
         public bool IsNotProcessing => !IsProcessing;
 
         public bool IsRunning
@@ -120,47 +129,36 @@ namespace PlatformLauncher.Presentation.ViewModels
             set { _isRunning = value; OnPropertyChanged(); UpdateButtonStates(); }
         }
 
-        public string StatusText
-        {
-            get => _statusText;
-            set { _statusText = value; OnPropertyChanged(); }
-        }
-
-        public string StatusBarText
-        {
-            get => _statusBarText;
-            set { _statusBarText = value; OnPropertyChanged(); }
-        }
+        public string StatusText { get => _statusText; set { _statusText = value; OnPropertyChanged(); } }
+        public string StatusBarText { get => _statusBarText; set { _statusBarText = value; OnPropertyChanged(); } }
 
         public bool GlobalInstalling
         {
             get => _isInstalling;
-            private set
-            {
-                if (_isInstalling == value) return;
-                _isInstalling = value;
-                OnPropertyChanged();
-                UpdateButtonStates();
-            }
+            private set { if (_isInstalling != value) { _isInstalling = value; OnPropertyChanged(); UpdateButtonStates(); } }
         }
 
         public bool GlobalUninstalling
         {
             get => _isUninstalling;
-            private set
+            private set { if (_isUninstalling != value) { _isUninstalling = value; OnPropertyChanged(); UpdateButtonStates(); } }
+        }
+
+        public bool IsPortsProcessing
+        {
+            get => _isPortsProcessing;
+            set
             {
-                if (_isUninstalling == value) return;
-                _isUninstalling = value;
-                OnPropertyChanged();
-                UpdateButtonStates();
+                if (_isPortsProcessing != value)
+                {
+                    _isPortsProcessing = value;
+                    OnPropertyChanged();
+                    UpdateButtonStates();
+                }
             }
         }
 
-        public string FilterHeader
-        {
-            get => _filterHeader;
-            set { _filterHeader = value; OnPropertyChanged(); }
-        }
+        public string FilterHeader { get => _filterHeader; set { _filterHeader = value; OnPropertyChanged(); } }
 
         public bool FilterInstalled
         {
@@ -169,11 +167,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 if (_filterInstalled == value) return;
                 _filterInstalled = value;
-                if (value && _filterNotInstalled)
-                {
-                    _filterNotInstalled = false;
-                    OnPropertyChanged(nameof(FilterNotInstalled));
-                }
+                if (value && _filterNotInstalled) { _filterNotInstalled = false; OnPropertyChanged(nameof(FilterNotInstalled)); }
                 OnPropertyChanged();
                 _settingsManager.SetFilterState(_filterInstalled, _filterNotInstalled, _filterCustom);
                 ApplyFilters();
@@ -187,11 +181,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             {
                 if (_filterNotInstalled == value) return;
                 _filterNotInstalled = value;
-                if (value && _filterInstalled)
-                {
-                    _filterInstalled = false;
-                    OnPropertyChanged(nameof(FilterInstalled));
-                }
+                if (value && _filterInstalled) { _filterInstalled = false; OnPropertyChanged(nameof(FilterInstalled)); }
                 OnPropertyChanged();
                 _settingsManager.SetFilterState(_filterInstalled, _filterNotInstalled, _filterCustom);
                 ApplyFilters();
@@ -214,13 +204,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         public string SearchText
         {
             get => _searchText;
-            set
-            {
-                if (_searchText == value) return;
-                _searchText = value;
-                OnPropertyChanged();
-                ApplyFilters();
-            }
+            set { if (_searchText != value) { _searchText = value; OnPropertyChanged(); ApplyFilters(); } }
         }
 
         public List<SortOption> SortOptions { get; } = new List<SortOption>
@@ -233,29 +217,16 @@ namespace PlatformLauncher.Presentation.ViewModels
         public SortOption SelectedSortOption
         {
             get => _selectedSortOption;
-            set
-            {
-                if (_selectedSortOption == value) return;
-                _selectedSortOption = value;
-                OnPropertyChanged();
-                ApplyFilters();
-            }
+            set { if (_selectedSortOption != value) { _selectedSortOption = value; OnPropertyChanged(); ApplyFilters(); } }
         }
 
         public string StartButtonText
         {
             get
             {
-                if (SelectedGame == null) return "Выберите игру";
+                if (SelectedGame == null || string.IsNullOrEmpty(SelectedGame.Id)) return "Выберите игру";
                 if (SelectedGame.Id == "monitor") return "Только ===>";
-                string status;
-                if (!File.Exists(ConfigPath))
-                    status = "Скачать";
-                else if (_gameListService.Games.Any(p => p.Id == SelectedGame.Id && !p.Installed))
-                    status = "Установить";
-                else
-                    status = "Запустить";
-                return status;
+                return File.Exists(ConfigPath) ? "Запустить" : "Скачать";
             }
         }
 
@@ -263,28 +234,28 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             get
             {
-                if (IsRunning) return false;
-                if (SelectedGame == null) return false;
-                if (SelectedGame.Id == "monitor") return false;
-                if (!IsAdministrator) return false;
-                if (_isInstalling || _isUninstalling) return false;
-                if (SelectedGame.Installed)
+                if (IsRunning || SelectedGame == null || SelectedGame.Id == "monitor" || !IsAdministrator || _isInstalling || _isUninstalling || IsPortsProcessing) return false;
+                if (!File.Exists(ConfigPath)) return true;
+
+                if (!_pythonValidator.IsPythonValid())
                 {
-                    if (!_pythonValidator.IsPythonValid())
-                    {
-                        if (!_pythonValidationMessageShown)
-                        {
-                            _terminal.WriteLine("⚠️ Python не прошёл валидацию. Перейдите в Сервис -> Python");
-                            _pythonValidationMessageShown = true;
-                        }
-                        return false;
-                    }
-                    _pythonValidationMessageShown = false;
-                    if (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath))
+                    if (!_pythonValidationMessageShown) { _terminal.WriteLine("⚠️ Python не прошёл валидацию. Перейдите в Сервис -> Python"); _pythonValidationMessageShown = true; }
+                    return false;
+                }
+                _pythonValidationMessageShown = false;
+
+                if (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath))
+                {
+                    if (!_listsPathWarningShown)
                     {
                         _terminal.WriteLine("❌ Папка lists не найдена. Укажите путь в Сервис -> ZDY");
-                        return false;
+                        _listsPathWarningShown = true;
                     }
+                    return false;
+                }
+                else
+                {
+                    _listsPathWarningShown = false; // сбрасываем, если путь появился
                 }
                 return true;
             }
@@ -294,66 +265,29 @@ namespace PlatformLauncher.Presentation.ViewModels
         {
             get
             {
-                if (IsRunning) return false;
-                if (SelectedGame == null) return false;
-                if (!IsAdministrator) return false;
-                if (_isInstalling || _isUninstalling) return false;
-                return true;
+                if (IsRunning || SelectedGame == null || !IsAdministrator || _isInstalling || _isUninstalling || IsPortsProcessing) return false;
+                return File.Exists(ConfigPath);
             }
         }
 
-        /// <summary>Динамический текст кнопки Мониторинг: показывает "Скачать", если конфиг отсутствует.</summary>
-        public string MonitorButtonText => SelectedGame?.Id == "monitor" && !SelectedGame.ConfigDownloaded ? "Скачать" : "Мониторинг";
-
-        public bool CanInstall =>
-            SelectedGame != null &&
-            SelectedGame.Id != "monitor" &&
-            !SelectedGame.Installed &&
-            !_isInstalling && !_isUninstalling;
-
-        public bool CanUninstall =>
-             SelectedGame != null &&
-             SelectedGame.Installed &&
-             SelectedGame.Id != "monitor" &&
-             !_isInstalling && !_isUninstalling;
-
+        public string MonitorButtonText => "Мониторинг";
         public bool CanStop => IsRunning;
-        public string ContextMenuActionText => StartButtonText;
+
+        public bool CanBaseToggle => !IsRunning && !_isInstalling && !_isUninstalling && !IsPortsProcessing;
+        public bool CanInstallPorts => SelectedGame != null && SelectedGame.Id != "monitor" && File.Exists(ConfigPath) && !SelectedGame.Installed && CanBaseToggle;
+        public bool CanUninstallPorts => SelectedGame != null && SelectedGame.Id != "monitor" && File.Exists(ConfigPath) && SelectedGame.Installed && CanBaseToggle; 
+        public bool CanShowProperties => SelectedGame != null && File.Exists(ConfigPath);
 
         public ICommand RefreshPresetsCommand { get; }
         public ICommand ResetFiltersCommand { get; }
         public ICommand StartCommand { get; }
         public ICommand MonitorCommand { get; }
         public ICommand StopCommand { get; }
-        public ICommand InstallCommand { get; }
-        public ICommand UninstallCommand { get; }
+        public ICommand PortsToggleCommand { get; }
         public ICommand PropertiesCommand { get; }
         public ICommand RunCommandCommand { get; }
         public ICommand ClearConsoleCommand { get; }
         public ICommand ShowWindowCommand { get; }
-
-        public ICommand? ContextMenuActionCommand
-        {
-            get
-            {
-                if (SelectedGame == null) return null;
-                if (SelectedGame.Id == "monitor")
-                    return MonitorCommand;
-                string status;
-                if (!File.Exists(ConfigPath))
-                    status = "Скачать";
-                else if (_gameListService.Games.Any(p => p.Id == SelectedGame.Id && !p.Installed))
-                    status = "Установить";
-                else
-                    status = "Запустить";
-                return status switch
-                {
-                    "Скачать" => InstallCommand,
-                    "Установить" => InstallCommand,
-                    _ => StartCommand
-                };
-            }
-        }
 
         public MainViewModel(
             IGameListService gameListService,
@@ -370,7 +304,9 @@ namespace PlatformLauncher.Presentation.ViewModels
             ILogger logger,
             ITerminalOutput terminal,
             ISessionOrchestrator sessionOrchestrator,
-            IServiceProvider serviceProvider)
+            IServiceProvider serviceProvider,
+            IUpdateService updateService,
+            IPortsManager portsManager)
         {
             _gameListService = gameListService;
             _pythonValidator = pythonValidator;
@@ -386,39 +322,32 @@ namespace PlatformLauncher.Presentation.ViewModels
             _logger = logger;
             _terminal = terminal;
             _serviceProvider = serviceProvider;
-            _appConfigService = serviceProvider.GetRequiredService<IAppConfigService>();
             _sessionOrchestrator = sessionOrchestrator;
+            _updateService = updateService;
+            _portsManager = portsManager;
 
             _sessionOrchestrator.OutputReceived += msg => _terminal.WriteLine(msg);
             _sessionOrchestrator.SessionEnded += OnSessionEnded;
-
             _selectedSortOption = SortOptions[0];
             OnPropertyChanged(nameof(SelectedSortOption));
+            OnPropertyChanged(nameof(StartButtonText));
+            OnPropertyChanged(nameof(CanStart));
 
             RefreshPresetsCommand = new RelayCommand(async _ => await RefreshPresetsAsync(), _ => true);
             ResetFiltersCommand = new RelayCommand(_ => ResetFilters());
             StartCommand = new RelayCommand(async _ => await StartAsync(false), _ => CanStart);
             MonitorCommand = new RelayCommand(async _ => await StartAsync(true), _ => CanMonitor);
             StopCommand = new RelayCommand(async _ => await StopAsync(), _ => CanStop);
-            InstallCommand = new RelayCommand(async _ => await InstallAsync(), _ => CanInstall);
-            UninstallCommand = new RelayCommand(async _ => await UninstallAsync(), _ => CanUninstall);
-            PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => SelectedGame != null);
+            PortsToggleCommand = new RelayCommand(async _ => await TogglePortsAsync(null), _ => CanBaseToggle);
+            PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => CanShowProperties);
             RunCommandCommand = new RelayCommand(async param => await RunCommandAsync(param?.ToString()));
             ClearConsoleCommand = new RelayCommand(_ => ClearConsole());
             ShowWindowCommand = new RelayCommand(_ => ShowWindow());
 
             _ = Task.Run(async () =>
             {
-                try
-                {
-                    await InitializeAsync();
-                    ClearConsole();
-                }
-                catch (Exception ex)
-                {
-                    DebugLogger.WriteException("InitializeAsync failed", ex);
-                    _terminal.WriteLine($"❌ Критическая ошибка инициализации: {ex.Message}");
-                }
+                try { await InitializeAsync(); ClearConsole(); }
+                catch (Exception ex) { DebugLogger.WriteException("InitializeAsync failed", ex); _terminal.WriteLine($"❌ Критическая ошибка инициализации: {ex.Message}"); }
             });
         }
 
@@ -431,9 +360,9 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private static bool IsCurrentUserAdministrator()
         {
-            using var identity = WindowsIdentity.GetCurrent();
-            var principal = new WindowsPrincipal(identity);
-            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(identity);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
         }
 
         private async Task InitializeAsync()
@@ -443,72 +372,51 @@ namespace PlatformLauncher.Presentation.ViewModels
                 IsAdministrator = IsCurrentUserAdministrator();
                 await FindListsPathAsync();
                 var (installed, notInstalled, custom) = _settingsManager.GetFilterState();
-                _filterInstalled = installed;
-                _filterNotInstalled = notInstalled;
-                _filterCustom = custom;
-                OnPropertyChanged(nameof(FilterInstalled));
-                OnPropertyChanged(nameof(FilterNotInstalled));
-                OnPropertyChanged(nameof(FilterCustom));
+                _filterInstalled = installed; _filterNotInstalled = notInstalled; _filterCustom = custom;
+                OnPropertyChanged(nameof(FilterInstalled)); OnPropertyChanged(nameof(FilterNotInstalled)); OnPropertyChanged(nameof(FilterCustom));
                 LoadGames();
                 StatusBarText = $"Загружено пресетов: {Games.Count}";
+                IsPythonValid = _pythonValidator.IsPythonValid();
                 var appConfig = _serviceProvider.GetRequiredService<IAppConfigService>().Load();
                 AppVersion = appConfig.App?.AppVersion ?? "?.?.?";
-                _ = Task.Run(async () => await CheckUnrestoredBackupsAsync());
+                await SyncAllPortsStatusAsync();
             }
-            catch (Exception ex)
-            {
-                DebugLogger.WriteException("InitializeAsync error", ex);
-                _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}");
-            }
+            catch (Exception ex) { DebugLogger.WriteException("InitializeAsync error", ex); _terminal.WriteLine($"❌ Ошибка инициализации: {ex.Message}"); }
         }
 
-        private async Task CheckUnrestoredBackupsAsync()
+        public void RefreshPythonStatus()
+        {
+            IsPythonValid = _pythonValidator.IsPythonValid();
+            OnPropertyChanged(nameof(IsPythonValid));
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        private async Task SyncAllPortsStatusAsync()
         {
             try
             {
-                var backupManager = _serviceProvider.GetRequiredService<IBackupManager>();
-                var unrestored = backupManager.GetUnrestoredBackups();
-                if (unrestored.Count > 0)
+                var presets = _updateService.LoadPresets();
+                bool anyChanged = false;
+                foreach (var preset in presets)
                 {
-                    string? latest = backupManager.GetLatestUnrestoredBackup();
-                    
-                    if (latest != null && !string.IsNullOrEmpty(ListsPath) && Directory.Exists(ListsPath))
+                    // Проверяем только игры, у которых есть конфиг (ConfigDownloaded == true)
+                    if (!preset.ConfigDownloaded || preset.Id == "monitor") continue;
+
+                    var (hasRules, _) = await _portsManager.CheckRulesExistAsync(preset.Id);
+                    if (preset.Installed != hasRules)
                     {
-                        string gameId = new DirectoryInfo(Path.GetDirectoryName(latest)!).Name;
-                        var result = await Application.Current.Dispatcher.InvokeAsync(() =>
-                            MessageBox.Show(
-                                $"Обнаружен невосстановленный бэкап для '{gameId}'.\nВосстановить lists? ",
-                                "Восстановление бэкапа ",
-                                MessageBoxButton.YesNo,
-                                MessageBoxImage.Warning));
-                        if (result == MessageBoxResult.Yes)
-                        {
-                            bool restored = await backupManager.RestoreBackupAsync(ListsPath, latest);
-                            if (restored)
-                            {
-                                backupManager.MarkAsSaved(latest);
-                                _terminal.WriteLine($"✅ Бэкап для {gameId} восстановлен. ");
-                            }
-                            else
-                            {
-                                _terminal.WriteLine($" Ошибка восстановления бэкапа для {gameId}. ");
-                            }
-                        }
-                        else
-                        {
-                            backupManager.MarkAsNoRestore(latest);
-                            _terminal.WriteLine($"ℹ️ Бэкап для {gameId} пропущен пользователем. ");
-                        }
+                        preset.Installed = hasRules;
+                        anyChanged = true;
                     }
-                    else
-                    {
-                        _terminal.WriteLine($"️ Обнаружено невосстановленных бэкапов: {unrestored.Count}. Укажите папку lists для восстановления. ");
-                    }
+                }
+                if (anyChanged)
+                {
+                    _updateService.SavePresetsFile(new PresetsFile { Games = presets });
                 }
             }
             catch (Exception ex)
             {
-                DebugLogger.WriteException("CheckUnrestoredBackupsAsync failed ", ex);
+                DebugLogger.WriteException("SyncAllPortsStatusAsync failed", ex);
             }
         }
 
@@ -520,39 +428,18 @@ namespace PlatformLauncher.Presentation.ViewModels
                 if (string.IsNullOrEmpty(ListsPath))
                 {
                     string savedPath = _settingsManager.GetListsPath();
-                    if (!string.IsNullOrEmpty(savedPath) && Directory.Exists(savedPath))
-                    {
-                        ListsPath = savedPath;
-                        _terminal.WriteLine($"ℹ️ Используется сохранённый путь: {savedPath}");
-                    }
-                    else
-                    {
-                        _terminal.WriteLine("⚠️ Папка lists не найдена автоматически. Укажите вручную через меню Сервис -> ZDY.");
-                    }
+                    if (!string.IsNullOrEmpty(savedPath) && Directory.Exists(savedPath)) { ListsPath = savedPath; _terminal.WriteLine($"ℹ️ Используется сохранённый путь: {savedPath}"); }
+                    else _terminal.WriteLine("⚠️ Папка lists не найдена автоматически. Укажите вручную через меню Сервис -> ZDY.");
                 }
             }
-            catch (Exception ex)
-            {
-                DebugLogger.WriteException("FindListsPathAsync failed", ex);
-                throw;
-            }
+            catch (Exception ex) { DebugLogger.WriteException("FindListsPathAsync failed", ex); throw; }
         }
 
-        private void LoadGames()
-        {
-            _gameListService.LoadGames();
-            ApplyFilters();
-        }
+        private void LoadGames() { _gameListService.LoadGames(); ApplyFilters(); }
 
         private void ApplyFilters()
         {
-            _gameListService.ApplyFilters(
-                SearchText,
-                FilterInstalled,
-                FilterNotInstalled,
-                FilterCustom,
-                _selectedSortOption?.Id ?? string.Empty);
-
+            _gameListService.ApplyFilters(SearchText, FilterInstalled, FilterNotInstalled, FilterCustom, _selectedSortOption?.Id ?? string.Empty);
             var allPresets = _gameListService.Games.ToList();
             FilterHeader = _gameListService.GetFilterHeader(allPresets.Count, Games.Count);
         }
@@ -568,222 +455,186 @@ namespace PlatformLauncher.Presentation.ViewModels
 
         private void UpdateButtonStates()
         {
-            OnPropertyChanged(nameof(CanStart));
-            OnPropertyChanged(nameof(CanMonitor));
-            OnPropertyChanged(nameof(CanStop));
-            OnPropertyChanged(nameof(CanInstall));
-            OnPropertyChanged(nameof(CanUninstall));
-            OnPropertyChanged(nameof(StartButtonText));
-            OnPropertyChanged(nameof(MonitorButtonText));
-            OnPropertyChanged(nameof(ContextMenuActionText));
-            OnPropertyChanged(nameof(ContextMenuActionCommand));
-            CommandManager.InvalidateRequerySuggested();
+            OnPropertyChanged(nameof(CanStart)); OnPropertyChanged(nameof(CanMonitor)); OnPropertyChanged(nameof(CanStop));
+            OnPropertyChanged(nameof(CanInstallPorts)); OnPropertyChanged(nameof(CanUninstallPorts));
+            OnPropertyChanged(nameof(CanShowProperties));
+            OnPropertyChanged(nameof(StartButtonText)); OnPropertyChanged(nameof(MonitorButtonText));
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
 
         public async Task RefreshPresetsAsync()
         {
-            IsProcessing = true;
-            UpdateButtonStates();
+            IsProcessing = true; UpdateButtonStates();
             try
             {
-                _terminal.WriteLine("⏳ Синхронизация пресетов...");
-                StatusBarText = "Синхронизация...";
+                _terminal.WriteLine("⏳ Синхронизация пресетов..."); StatusBarText = "Синхронизация...";
                 bool ok = await _syncPresetsUseCase.ExecuteAsync();
                 _terminal.WriteLine(ok ? "✅ Синхронизация завершена" : "❌ Ошибка синхронизации");
-                LoadGames();
-                StatusBarText = $"Загружено {Games.Count} пресетов";
+                LoadGames(); StatusBarText = $"Загружено {Games.Count} пресетов";
             }
-            finally
-            {
-                IsProcessing = false;
-                UpdateButtonStates();
-            }
+            finally { IsProcessing = false; UpdateButtonStates(); }
         }
 
         private async Task StartAsync(bool monitorOnly)
         {
             if (SelectedGame == null) return;
-
-            IsProcessing = true;
-            UpdateButtonStates();
+            IsProcessing = true; UpdateButtonStates();
             try
             {
-                if (!SelectedGame.ConfigDownloaded)
+                if (!File.Exists(ConfigPath))
                 {
-                    var progress = new Progress<string>(msg => _terminal.WriteLine(msg));
-                    var (success, error, updated) = await _installGameUseCase.ExecuteDownloadAsync(SelectedGame, progress);
-                    if (success && updated != null)
+                    IProgress<string> progress = new Progress<string>(msg => _terminal.WriteLine(msg));
+                    var downloadResult = await _installGameUseCase.ExecuteDownloadAsync(SelectedGame, progress);
+                    if (downloadResult.Success && downloadResult.UpdatedPreset != null)
                     {
-                        var index = Games.IndexOf(SelectedGame);
-                        if (index >= 0) Games[index] = updated;
-                        SelectedGame = updated;
-                        _terminal.WriteLine($"✅ Конфиг {updated.Name} скачан");
-                        UpdateButtonStates();
-                        return;
+                        var index = Games.IndexOf(SelectedGame!);
+                        if (index >= 0) Games[index] = downloadResult.UpdatedPreset;
+                        SelectedGame = downloadResult.UpdatedPreset;
+                        _terminal.WriteLine($"✅ Конфиг {downloadResult.UpdatedPreset.Name} скачан");
+                        UpdateButtonStates(); return;
                     }
-                    _terminal.WriteLine($"❌ Ошибка: {error}");
-                    return;
-                }
-
-                if (!monitorOnly && !SelectedGame.Installed)
-                {
-                    var progress = new Progress<string>(msg => _terminal.WriteLine(msg));
-                    var (success, error, updated) = await _installGameUseCase.ExecuteInstallAsync(SelectedGame, progress);
-                    if (success && updated != null)
-                    {
-                        var index = Games.IndexOf(SelectedGame);
-                        if (index >= 0) Games[index] = updated;
-                        SelectedGame = updated;
-                        _terminal.WriteLine($"✅ Фикс {updated.Name} установлен");
-                        UpdateButtonStates();
-                        return;
-                    }
-                    _terminal.WriteLine($"❌ Ошибка: {error}");
-                    return;
+                    _terminal.WriteLine($"❌ Ошибка: {downloadResult.ErrorMessage}"); return;
                 }
 
                 string pythonExe = _pythonValidator.GetPythonPath();
                 if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
                 {
-                    _terminal.WriteLine("⚠️ Python не найден или не установлен");
-                    _terminal.WriteLine("   Перейдите в Сервис -> Python, чтобы устранить неисправность");
-                    return;
+                    _terminal.WriteLine("⚠️ Python не найден или не установлен\n   Перейдите в Сервис -> Python, чтобы устранить неисправность"); return;
                 }
 
                 if (!monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
-                {
-                    _terminal.WriteLine("❌ Папка lists не существует или не выбрана.");
-                    return;
-                }
+                { _terminal.WriteLine("❌ Папка lists не существует или не выбрана."); return; }
 
                 if (monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
-                {
                     _terminal.WriteLine("⚠️ Мониторинг без папки lists (только просмотр соединений)");
-                }
 
                 _terminal.Clear();
                 bool warpEnabled = _settingsManager.GetWarpEnabled(SelectedGame.Id);
                 bool filterProcesses = !monitorOnly;
-
-                IsRunning = true;
-                StatusText = "Запуск...";
-                UpdateButtonStates();
+                IsRunning = true; StatusText = "Запуск..."; UpdateButtonStates();
                 await _sessionOrchestrator.StartAsync(SelectedGame.Id, ListsPath, monitorOnly, warpEnabled, filterProcesses);
                 StatusText = monitorOnly ? "Мониторинг" : "Активен";
                 StatusBarText = $"{SelectedGame.Name} {(monitorOnly ? "мониторинг" : "запущен")}";
             }
             catch (Exception ex)
-            {
-                _terminal.WriteLine($"❌ Ошибка: {ex.Message}");
-                StatusText = "Ошибка";
-                IsRunning = false;
-                StatusBarText = "Ошибка запуска";
-            }
-            finally
-            {
-                IsProcessing = false;
-                UpdateButtonStates();
-            }
+            { _terminal.WriteLine($"❌ Ошибка: {ex.Message}"); StatusText = "Ошибка"; IsRunning = false; StatusBarText = "Ошибка запуска"; }
+            finally { IsProcessing = false; UpdateButtonStates(); }
         }
 
         private async Task StopAsync()
         {
+            IsProcessing = true; UpdateButtonStates();
+            try { StatusText = "Остановка..."; await _sessionOrchestrator.StopAsync(); StatusText = "Завершён"; IsRunning = false; }
+            catch (Exception ex) { _terminal.WriteLine($"❌ Ошибка остановки: {ex.Message}"); StatusText = "Ошибка"; IsRunning = false; StatusBarText = "Ошибка остановки"; }
+            finally { IsProcessing = false; UpdateButtonStates(); }
+        }
+
+        private async Task TogglePortsAsync(bool? forceInstall)
+        {
+            if (SelectedGame == null || SelectedGame.Id == "monitor") return;
+
+            IsPortsProcessing = true;
             IsProcessing = true;
             UpdateButtonStates();
+
             try
             {
-                StatusText = "Остановка...";
-                await _sessionOrchestrator.StopAsync();
-                StatusText = "Завершён";
-                IsRunning = false;
+                var (hasRules, checkError) = await _portsManager.CheckRulesExistAsync(SelectedGame.Id);
+                _portsStatusCache[SelectedGame.Id] = (hasRules, DateTime.Now);
+
+                bool wantToInstall = forceInstall.HasValue ? forceInstall.Value : !hasRules;
+
+                if (wantToInstall && hasRules)
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                        MessageBox.Show($"Порты уже установлены!\n\nПравила для игры {SelectedGame.Name} уже существуют в брандмауэре.", "Порты установлены", MessageBoxButton.OK, MessageBoxImage.Information));
+                    return;
+                }
+
+                if (wantToInstall && !hasRules)
+                {
+                    var installConfirmResult = await Application.Current.Dispatcher.InvokeAsync(() =>
+                        MessageBox.Show($"Установить порты для {SelectedGame.Name}?", "Установка портов", MessageBoxButton.YesNo, MessageBoxImage.Question));
+                    if (installConfirmResult != MessageBoxResult.Yes) return;
+
+                    var config = _updateService.LoadGameConfig(SelectedGame.Id);
+                    if (config == null || config.Ports == null) { _terminal.WriteLine($"❌ Конфигурация портов для {SelectedGame.Name} не найдена"); return; }
+
+                    IProgress<string> progress = new Progress<string>(msg => _terminal.WriteLine(msg));
+                    var installResult = await _portsManager.AddRulesAsync(config.Ports.Tcp, config.Ports.Udp, SelectedGame.Id, msg => progress.Report(msg));
+
+                    if (installResult.Success)
+                    {
+                        _terminal.WriteLine($"✅ Порты для {SelectedGame.Name} установлены");
+                        await UpdateGameInstalledStatus(SelectedGame.Id, true, persist: true);
+                    }
+                    else _terminal.WriteLine($"❌ Ошибка установки портов: {installResult.Error}");
+                }
+                else
+                {
+                    if (!hasRules)
+                    {
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                            MessageBox.Show($"Порты уже были удалены!\n\nПравила для игры {SelectedGame.Name} не найдены в брандмауэре.", "Порты удалены", MessageBoxButton.OK, MessageBoxImage.Information));
+                        return;
+                    }
+
+                    var uninstallConfirmResult = await Application.Current.Dispatcher.InvokeAsync(() =>
+                        MessageBox.Show($"Найдены правила для игры {SelectedGame.Name}. Удалить?", "Удаление портов", MessageBoxButton.YesNo, MessageBoxImage.Question));
+                    if (uninstallConfirmResult != MessageBoxResult.Yes) return;
+
+                    IProgress<string> progress = new Progress<string>(msg => _terminal.WriteLine(msg));
+                    var removeResult = await _portsManager.RemoveAllRulesAsync(SelectedGame.Id, msg => progress.Report(msg));
+
+                    if (removeResult.Success)
+                    {
+                        _terminal.WriteLine($"✅ Порты для {SelectedGame.Name} удалены");
+                        await UpdateGameInstalledStatus(SelectedGame.Id, false, persist: true);
+                    }
+                    else _terminal.WriteLine($"❌ Ошибка удаления портов: {removeResult.Error}");
+                }
             }
             catch (Exception ex)
-            {
-                _terminal.WriteLine($"❌ Ошибка остановки: {ex.Message}");
-                StatusText = "Ошибка";
-                IsRunning = false;
-                StatusBarText = "Ошибка остановки";
-            }
-            finally
-            {
-                IsProcessing = false;
-                UpdateButtonStates();
-            }
+            { _terminal.WriteLine($"❌ Ошибка управления портами: {ex.Message}"); DebugLogger.WriteException("TogglePortsAsync error", ex); }
+            finally { IsPortsProcessing = false; IsProcessing = false; UpdateButtonStates(); }
         }
 
-        private async Task InstallAsync()
+        private async Task UpdateGameInstalledStatus(string gameId, bool installed, bool persist = false)
         {
-            if (SelectedGame == null) return;
+            _portsStatusCache[gameId] = (installed, DateTime.Now);
 
-            IsProcessing = true;
-            GlobalInstalling = true;
-            UpdateButtonStates();
-            try
+            var gameInUi = Games.FirstOrDefault(g => g.Id == gameId);
+            if (gameInUi != null && gameInUi.Installed != installed)
             {
-                var progress = new Progress<string>(msg => _terminal.WriteLine(msg));
-                if (!SelectedGame.ConfigDownloaded)
-                {
-                    var (success, error, updated) = await _installGameUseCase.ExecuteDownloadAsync(SelectedGame, progress);
-                    if (success && updated != null)
-                    {
-                        var index = Games.IndexOf(SelectedGame);
-                        if (index >= 0) Games[index] = updated;
-                        SelectedGame = updated;
-                        _terminal.WriteLine($"✅ Конфиг {updated.Name} скачан");
-                    }
-                    else _terminal.WriteLine($"❌ Ошибка: {error}");
-                }
-                else
-                {
-                    var (success, error, updated) = await _installGameUseCase.ExecuteInstallAsync(SelectedGame, progress);
-                    if (success && updated != null)
-                    {
-                        var index = Games.IndexOf(SelectedGame);
-                        if (index >= 0) Games[index] = updated;
-                        SelectedGame = updated;
-                        _terminal.WriteLine($"✅ Фикс {updated.Name} установлен");
-                    }
-                    else _terminal.WriteLine($"❌ Ошибка: {error}");
-                }
+                gameInUi.Installed = installed;
             }
-            finally
+
+            if (persist)
             {
-                GlobalInstalling = false;
-                IsProcessing = false;
-                UpdateButtonStates();
+                var presets = _updateService.LoadPresets();
+                foreach (var p in presets)
+                {
+                    if (p.Id == gameId) { p.Installed = installed; break; }
+                }
+                _updateService.SavePresetsFile(new PresetsFile { Games = presets });
             }
+
+            OnPropertyChanged(nameof(CanInstallPorts));
+            OnPropertyChanged(nameof(CanUninstallPorts));
         }
 
-        private async Task UninstallAsync()
+        private async Task UpdatePortsStatusAsync(string gameId)
         {
-            if (SelectedGame == null) return;
+            if (string.IsNullOrEmpty(gameId) || gameId == "monitor") return;
+            await UpdateGameInstalledStatus(gameId, GetCachedPortsStatus());
+        }
 
-            IsProcessing = true;
-            GlobalInstalling = false;
-            UpdateButtonStates();
-            try
-            {
-                var progress = new Progress<string>(msg => _terminal.WriteLine(msg));
-                var (success, error) = await _uninstallGameUseCase.ExecuteAsync(SelectedGame, progress);
-                if (success)
-                {
-                    SelectedGame.Installed = false;
-                    _terminal.WriteLine($"✅ Фикс {SelectedGame.Name} удалён");
-                    StatusBarText = $"Фикс {SelectedGame.Name} удалён";
-                    LoadGames();
-                }
-                else
-                {
-                    _terminal.WriteLine($"❌ Ошибка: {error}");
-                    StatusBarText = "Ошибка удаления";
-                }
-            }
-            finally
-            {
-                GlobalInstalling = false;
-                IsProcessing = false;
-                UpdateButtonStates();
-            }
+        private bool GetCachedPortsStatus()
+        {
+            if (SelectedGame == null) return false;
+            if (_portsStatusCache.TryGetValue(SelectedGame.Id, out var cache) && (DateTime.Now - cache.CheckedAt).TotalSeconds < CacheTtlSeconds)
+                return cache.HasRules;
+            return false;
         }
 
         private void ShowProperties()
@@ -791,33 +642,28 @@ namespace PlatformLauncher.Presentation.ViewModels
             if (SelectedGame == null) return;
             var dialog = new GamePropertiesDialog(SelectedGame, _settingsManager);
             dialog.Owner = Application.Current.MainWindow;
-            if (dialog.ShowDialog() == true)
-            {
-                _terminal.WriteLine($"✅ Настройки для {SelectedGame.Name} сохранены");
-            }
+            if (dialog.ShowDialog() == true) _terminal.WriteLine($"✅ Настройки для {SelectedGame.Name} сохранены");
         }
 
         private async Task RunCommandAsync(string? command)
         {
             if (string.IsNullOrEmpty(command)) return;
             string result = await _commandRunner.RunCommandAsync(command, msg => _terminal.WriteLine(msg));
+            if (!string.IsNullOrEmpty(result))
+                _terminal.WriteLine(result);
         }
 
-        private void ResetFilters()
-        {
-            FilterInstalled = false;
-            FilterNotInstalled = false;
-            FilterCustom = false;
-        }
+        private void ResetFilters() { FilterInstalled = false; FilterNotInstalled = false; FilterCustom = false; }
 
         public void ClearConsole()
         {
             _terminal.Clear();
             _terminal.WriteLine("=== Fix Traffic Pipeline ===");
             _terminal.WriteLine("\nВыберите игру из списка слева.");
-            _terminal.WriteLine("\n• Запустить фикс — применяет настройки, создаёт бэкап lists");
-            _terminal.WriteLine("\n  Запуск с WARP — в свойствах фикса (ПКМ > Свойства).");
-            _terminal.WriteLine("\n• Мониторинг — только просмотр соединений, без изменения lists");
+            _terminal.WriteLine("\n• Скачать — скачивает конфиг игры");
+            _terminal.WriteLine("\n• Запустить — запускает фикс (требует скачанный конфиг)");
+            _terminal.WriteLine("\n• Мониторинг — только просмотр соединений");
+            _terminal.WriteLine("\n• ПКМ по игре → Установить/Удалить порты");
             _terminal.WriteLine("\nДля обновления списка игр нажмите «Обновить список»\n");
             if (!IsZapretValid())
             {
@@ -827,10 +673,7 @@ namespace PlatformLauncher.Presentation.ViewModels
             }
         }
 
-        private bool IsZapretValid()
-        {
-            return _zapretValidator.IsZapretValid(ListsPath);
-        }
+        private bool IsZapretValid() => _zapretValidator.IsZapretValid(ListsPath);
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

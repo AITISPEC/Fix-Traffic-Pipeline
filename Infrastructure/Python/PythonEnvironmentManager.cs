@@ -196,7 +196,9 @@ namespace PlatformLauncher.Infrastructure.Python
             string[] whlFiles = {
                 Path.Combine(_extraPythonDir, "watchdog-6.0.0-py3-none-win_amd64.whl"),
                 Path.Combine(_extraPythonDir, "pyyaml-6.0.3-cp313-cp313-win_amd64.whl"),
-                Path.Combine(_extraPythonDir, "psutil-7.2.2-cp37-abi3-win_amd64.whl")
+                Path.Combine(_extraPythonDir, "psutil-7.2.2-cp37-abi3-win_amd64.whl"),
+                Path.Combine(_extraPythonDir, "packaging-26.2-py3-none-any.whl"),
+                Path.Combine(_extraPythonDir, "pip_review-1.3.0-py3-none-any.whl")
             };
             foreach (var whl in whlFiles)
             {

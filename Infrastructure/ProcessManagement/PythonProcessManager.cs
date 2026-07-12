@@ -63,7 +63,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         {
             CleanPythonCache();
             _listsPath = listsPath;
-            string pythonExe = _pythonEnvManager.GetVenvPythonPath(); // <-- ИСПРАВЛЕНО: через экземпляр
+            string pythonExe = _pythonEnvManager.GetVenvPythonPath();
             if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
                 throw new Exception("Виртуальное окружение Python не найдено.");
 
@@ -71,13 +71,7 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             if (!File.Exists(monitorScript))
                 throw new Exception($"Скрипт монитора не найден: {monitorScript}");
 
-            string args = $"\"{monitorScript}\" --game {gameId} --lists-path \"{listsPath}\"";
-            if (monitorOnly)
-                args += " --monitor-only";
-            if (!filterProcesses)
-                args += " --no-filter-processes";
-
-            var psi = new ProcessStartInfo(pythonExe, args)
+            var psi = new ProcessStartInfo(pythonExe)
             {
                 WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
                 RedirectStandardOutput = true,
@@ -90,6 +84,23 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             };
 
             psi.Environment["PYTHONPATH"] = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+
+            // === ГЛАВНОЕ: передаём аргументы через ArgumentList ===
+            psi.ArgumentList.Add(monitorScript);
+            psi.ArgumentList.Add("--game");
+            psi.ArgumentList.Add(gameId);  // гарантированно передаётся как отдельный аргумент
+
+            if (!string.IsNullOrEmpty(listsPath))
+            {
+                psi.ArgumentList.Add("--lists-path");
+                psi.ArgumentList.Add(listsPath);
+            }
+
+            if (monitorOnly)
+                psi.ArgumentList.Add("--monitor-only");
+
+            if (!filterProcesses)
+                psi.ArgumentList.Add("--no-filter-processes");
 
             _process = new Process { StartInfo = psi };
             _process.OutputDataReceived += (s, e) => { if (e.Data != null) OutputReceived?.Invoke(e.Data); };

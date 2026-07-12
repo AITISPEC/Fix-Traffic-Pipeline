@@ -1,4 +1,4 @@
 psutil
-colorama
 watchdog
 pyyaml
+pip-review

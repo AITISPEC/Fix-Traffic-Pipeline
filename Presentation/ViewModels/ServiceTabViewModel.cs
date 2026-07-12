@@ -56,6 +56,7 @@ namespace PlatformLauncher.Presentation.ViewModels
         public event Action<bool, bool>? DebugEnabledChanged;
         public event Action<string>? ThemeChanged;
         public event Action<string>? ListsPathChanged;
+        public event Action? PythonStatusChanged;
 
         public ObservableCollection<ThemeItem> LightThemes { get; } = new ObservableCollection<ThemeItem>();
         public ObservableCollection<ThemeItem> DarkThemes { get; } = new ObservableCollection<ThemeItem>();
@@ -1137,7 +1138,10 @@ namespace PlatformLauncher.Presentation.ViewModels
             var progress = new Progress<string>(msg => Log("Python",msg));
             bool ok = await _pythonEnvManager.EnsureEnvironmentAsync(AppDomain.CurrentDomain.BaseDirectory, progress);
             if (ok)
+            {
+                PythonStatusChanged?.Invoke();
                 Log("Python","✅ Окружение Python готово.");
+            }    
             else
                 Log("Python","❌ Ошибка установки Python.");
         }

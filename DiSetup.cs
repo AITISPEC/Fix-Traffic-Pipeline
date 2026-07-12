@@ -133,39 +133,26 @@ namespace PlatformLauncher
             // services.AddTransient<MainViewModel>();
             // services.AddSingleton<ServiceTabViewModel>();
 
-            // Окна и контролы
             services.AddTransient<MainViewModel>(provider =>
             {
-                var gameListService = provider.GetRequiredService<IGameListService>();
-                var pythonValidator = provider.GetRequiredService<IPythonValidatorService>();
-                var zapretValidator = provider.GetRequiredService<IZapretValidatorService>();
-                var commandRunner = provider.GetRequiredService<ICommandRunnerService>();
-                var settingsManager = provider.GetRequiredService<ISettingsManager>();
-                var installGameUseCase = provider.GetRequiredService<InstallGameUseCase>();
-                var uninstallGameUseCase = provider.GetRequiredService<UninstallGameUseCase>();
-                var syncPresetsUseCase = provider.GetRequiredService<SyncPresetsUseCase>();
-                var startMonitoringUseCase = provider.GetRequiredService<StartMonitoringUseCase>();
-                var stopMonitoringUseCase = provider.GetRequiredService<StopMonitoringUseCase>();
-                var winwsLocator = provider.GetRequiredService<IWinwsLocator>();
-                var logger = provider.GetRequiredService<ILogger>();
-                var terminal = provider.GetRequiredService<ITerminalOutput>();
-                var sessionOrchestrator = provider.GetRequiredService<ISessionOrchestrator>();
                 return new MainViewModel(
-                    gameListService,
-                    pythonValidator,
-                    zapretValidator,
-                    commandRunner,
-                    settingsManager,
-                    installGameUseCase,
-                    uninstallGameUseCase,
-                    syncPresetsUseCase,
-                    startMonitoringUseCase,
-                    stopMonitoringUseCase,
-                    winwsLocator,
-                    logger,
-                    terminal,
-                    sessionOrchestrator,
-                    provider);
+                    provider.GetRequiredService<IGameListService>(),
+                    provider.GetRequiredService<IPythonValidatorService>(),
+                    provider.GetRequiredService<IZapretValidatorService>(),
+                    provider.GetRequiredService<ICommandRunnerService>(),
+                    provider.GetRequiredService<ISettingsManager>(),
+                    provider.GetRequiredService<InstallGameUseCase>(),
+                    provider.GetRequiredService<UninstallGameUseCase>(),
+                    provider.GetRequiredService<SyncPresetsUseCase>(),
+                    provider.GetRequiredService<StartMonitoringUseCase>(),
+                    provider.GetRequiredService<StopMonitoringUseCase>(),
+                    provider.GetRequiredService<IWinwsLocator>(),
+                    provider.GetRequiredService<ILogger>(),
+                    provider.GetRequiredService<ITerminalOutput>(),
+                    provider.GetRequiredService<ISessionOrchestrator>(),
+                    provider,
+                    provider.GetRequiredService<IUpdateService>(),
+                    provider.GetRequiredService<IPortsManager>());
             });
 
             services.AddSingleton<MainWindow>(provider =>

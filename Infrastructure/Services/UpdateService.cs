@@ -21,7 +21,11 @@ namespace PlatformLauncher.Infrastructure.Services
         public UpdateService(ILogger logger, IAppConfigService appConfigService)
         {
             _logger = logger;
-            _httpClient = new HttpClient();
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            };
+            _httpClient = new HttpClient(handler);
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "PlatformLauncher/1.0");
             _presetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
             _configsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
@@ -70,13 +74,11 @@ namespace PlatformLauncher.Infrastructure.Services
             var allGames = new List<GamePreset>();
             var presetsFile = LoadPresetsFile();
             allGames.AddRange(presetsFile.Games);
-
             foreach (var preset in allGames)
             {
                 string configPath = Path.Combine(_configsFolder, $"{preset.Id}.yaml");
                 preset.ConfigDownloaded = File.Exists(configPath);
             }
-
             if (Directory.Exists(_configsFolder))
             {
                 var localFiles = Directory.GetFiles(_configsFolder, "*.yaml")
@@ -84,14 +86,12 @@ namespace PlatformLauncher.Infrastructure.Services
                                            .Select(Path.GetFileNameWithoutExtension)
                                            .Where(id => !string.IsNullOrEmpty(id));
                 bool presetsModified = false;
-
                 foreach (var id in localFiles)
                 {
                     if (!allGames.Any(g => g.Id == id))
                     {
                         if (string.IsNullOrEmpty(id))
                             continue;
-
                         GameConfig? config;
                         try
                         {
@@ -102,7 +102,6 @@ namespace PlatformLauncher.Infrastructure.Services
                             _logger.Warning($"Локальный конфиг {id}.yaml не прошёл валидацию: {ex.Message}");
                             continue;
                         }
-
                         if (config != null)
                         {
                             var preset = new GamePreset
@@ -120,7 +119,6 @@ namespace PlatformLauncher.Infrastructure.Services
                         }
                     }
                 }
-
                 if (presetsModified)
                 {
                     SavePresetsFile(presetsFile);
@@ -141,10 +139,9 @@ namespace PlatformLauncher.Infrastructure.Services
                     _logger.Error($"Ошибка загрузки presets.yaml: {response.StatusCode}");
                     return false;
                 }
-
                 var remoteYaml = await response.Content.ReadAsStringAsync();
                 var deserializer = new DeserializerBuilder()
-                    .IgnoreUnmatchedProperties()  // ← Игнорировать неизвестные свойства
+                    .IgnoreUnmatchedProperties()
                     .Build();
                 PresetsFile remotePresets;
                 try
@@ -156,16 +153,13 @@ namespace PlatformLauncher.Infrastructure.Services
                     _logger.Error($"Ошибка десериализации удалённого presets.yaml: {ex.Message}");
                     return false;
                 }
-
                 if (remotePresets?.Games == null || remotePresets.Games.Count == 0)
                 {
                     _logger.Warning("Удалённый presets.yaml не содержит списка игр или пуст. Локальные пресеты не изменены.");
                     return true;
                 }
-
                 var localPresets = LoadPresetsFile();
                 var localDict = localPresets.Games.ToDictionary(g => g.Id);
-
                 foreach (var remoteGame in remotePresets.Games)
                 {
                     if (localDict.TryGetValue(remoteGame.Id, out var localGame))
@@ -183,7 +177,6 @@ namespace PlatformLauncher.Infrastructure.Services
                         localPresets.Games.Add(remoteGame);
                     }
                 }
-
                 SavePresetsFile(localPresets);
                 _logger.Info("Синхронизация завершена, presets.yaml обновлён");
                 return true;
@@ -218,37 +211,41 @@ namespace PlatformLauncher.Infrastructure.Services
                 }
 
                 _logger.Info($"Загрузка конфига {preset.Name} с {preset.ConfigUrl}");
-                using (var response = await _httpClient.GetAsync(preset.ConfigUrl))
+
+                string content;
+                try
                 {
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        string err = $"HTTP ошибка {response.StatusCode} при загрузке {preset.ConfigUrl}";
-                        _logger.Error(err);
-                        return (false, err);
-                    }
-                    var content = await response.Content.ReadAsStringAsync();
+                    // ЗАМЕНА: WebClient -> HttpClient
+                    content = await _httpClient.GetStringAsync(preset.ConfigUrl);
                     _logger.Info($"Конфиг загружен, размер {content.Length} байт");
-
-                    try
-                    {
-                        var deserializer = new DeserializerBuilder().Build();
-                        var config = deserializer.Deserialize<GameConfig>(content);
-                        if (config.TargetProcesses == null)
-                            throw new Exception("Конфиг не содержит target_processes");
-                        _logger.Info($"Валидация пройдена: target_processes = {config.TargetProcesses?.Count ?? 0}");
-                    }
-                    catch (Exception ex)
-                    {
-                        string err = $"Ошибка валидации конфига: {ex.Message}";
-                        _logger.Error(err);
-                        string snippet = content.Length > 500 ? content.Substring(0, 500) + "..." : content;
-                        _logger.Error($"Содержимое конфига (первые 500 символов): {snippet}");
-                        return (false, err);
-                    }
-
-                    await File.WriteAllTextAsync(localConfigPath, content);
-                    _logger.Info($"Конфиг сохранён в {localConfigPath}");
                 }
+                catch (Exception ex)
+                {
+                    string err = $"Ошибка загрузки {preset.ConfigUrl}: {ex.Message}";
+                    _logger.Error(err);
+                    return (false, err);
+                }
+
+                // Валидация полученного YAML
+                try
+                {
+                    var deserializer = new DeserializerBuilder().Build();
+                    var config = deserializer.Deserialize<GameConfig>(content);
+                    if (config.TargetProcesses == null)
+                        throw new Exception("Конфиг не содержит target_processes");
+                    _logger.Info($"Валидация пройдена: target_processes = {config.TargetProcesses?.Count ?? 0}");
+                }
+                catch (Exception ex)
+                {
+                    string err = $"Ошибка валидации конфига: {ex.Message}";
+                    _logger.Error(err);
+                    string snippet = content.Length > 500 ? content.Substring(0, 500) + "..." : content;
+                    _logger.Error($"Содержимое конфига (первые 500 символов): {snippet}");
+                    return (false, err);
+                }
+
+                await File.WriteAllTextAsync(localConfigPath, content);
+                _logger.Info($"Конфиг сохранён в {localConfigPath}");
 
                 _logger.Info($"Скачивание {preset.Id} завершено успешно");
                 return (true, string.Empty);
@@ -283,8 +280,6 @@ namespace PlatformLauncher.Infrastructure.Services
                 var yaml = File.ReadAllText(configPath);
                 var deserializer = new DeserializerBuilder().Build();
                 var config = deserializer.Deserialize<GameConfig>(yaml);
-
-                // Пункт 0.1: проверяем наличие обязательных ключей (не их наполненность)
                 if (config.TargetProcesses == null)
                     throw new Exception("Конфиг не содержит target_processes");
                 if (config.ScanInterval <= 0)
@@ -297,7 +292,6 @@ namespace PlatformLauncher.Infrastructure.Services
                     throw new Exception("list_flush_interval отсутствует");
                 if (config.ListRules == null)
                     throw new Exception("list_rules отсутствует");
-
                 return config;
             }
             catch (Exception ex)
@@ -307,21 +301,17 @@ namespace PlatformLauncher.Infrastructure.Services
             }
         }
 
-        // Методы для работы с пользовательскими пресетами
         public void AddUserPreset(GamePreset preset)
         {
             var presetsFile = LoadPresetsFile();
-
-            // Проверяем, существует ли уже пресет с таким ID (для обновления config_url и т.д.)
             var existingIndex = presetsFile.Games.FindIndex(g => g.Id == preset.Id);
             if (existingIndex >= 0)
             {
                 presetsFile.Games[existingIndex].ConfigUrl = preset.ConfigUrl;
                 presetsFile.Games[existingIndex].WarpSupported = preset.WarpSupported;
                 presetsFile.Games[existingIndex].Version = preset.Version;
-                return; // Обновляем существующий
+                return;
             }
-
             preset.Installed = true;
             preset.IsUserPreset = true;
             presetsFile.Games.Add(preset);
@@ -346,7 +336,6 @@ namespace PlatformLauncher.Infrastructure.Services
             return string.Empty;
         }
 
-        // Пункт 4: метод для получения статуса установки из app_config.yaml
         public bool LoadProgressStatus(string gameId)
         {
             try
@@ -359,5 +348,6 @@ namespace PlatformLauncher.Infrastructure.Services
             {
                 return false;
             }
-        }    }
+        }
+    }
 }

@@ -50,15 +50,12 @@ namespace PlatformLauncher.Presentation.Views
             InitializeComponent();
             DataContext = viewModel;
             _serviceProvider = serviceProvider;
-
             if (terminalOutput is TerminalOutputAdapter adapter)
                 adapter.AttachTerminal(ConsoleOutputTerminal);
             ConsoleOutputTerminal.Loaded += (_, __) => HookTerminalRightClick();
             ConsoleOutputTerminal.Unloaded += (_, __) => UnhookTerminalRightClick();
-
             _themeService = _serviceProvider.GetRequiredService<IThemeService>();
             _themeService.Attach(ConsoleOutputTerminal, this);
-
             _serviceTabViewModel = _serviceProvider.GetRequiredService<ServiceTabViewModel>();
             _serviceTabViewModel.ThemeChanged += (id) => _themeService.ApplyTheme(id, _serviceTabViewModel.AllThemes);
             _serviceTabViewModel.ListsPathChanged += (newPath) =>
@@ -68,10 +65,13 @@ namespace PlatformLauncher.Presentation.Views
                     mainVm.ListsPath = newPath;
                 }
             };
+            _serviceTabViewModel.PythonStatusChanged += () =>
+            {
+                if (DataContext is MainViewModel vm) vm.RefreshPythonStatus();
+            };
             ServiceTabControl.SetViewModel(_serviceTabViewModel);
             SettingsTabControl.SetViewModel(_serviceTabViewModel);
             _sessionOrchestrator = _serviceProvider.GetRequiredService<ISessionOrchestrator>();
-
             if (viewModel != null)
             {
                 viewModel.PropertyChanged += (s, e) =>
@@ -85,11 +85,9 @@ namespace PlatformLauncher.Presentation.Views
                     }
                 };
             }
-
             _sessionOrchestrator.SetAskUserCallback(AskUserToSaveBackup);
             _serviceTabViewModel.ListsPath = (DataContext as MainViewModel)?.ListsPath ?? string.Empty;
             _terminal = terminal;
-
             if (viewModel != null)
             {
                 _serviceTabViewModel.ListsPath = viewModel.ListsPath;
@@ -99,7 +97,6 @@ namespace PlatformLauncher.Presentation.Views
                         _serviceTabViewModel.ListsPath = viewModel.ListsPath;
                 };
             }
-
             try
             {
                 string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "trayicon.ico");
@@ -112,19 +109,14 @@ namespace PlatformLauncher.Presentation.Views
             {
                 DebugLogger.Error($"Failed to load tray icon: {ex.Message}");
             }
-
             TrayIcon.Visibility = Visibility.Visible;
-
             var settingsManager = _serviceProvider.GetRequiredService<ISettingsManager>();
             string? savedThemeId = settingsManager.GetTheme()?.Trim();
             ThemeItem? themeToApply = null;
-
             if (!string.IsNullOrEmpty(savedThemeId))
                 themeToApply = _serviceTabViewModel.AllThemes.FirstOrDefault(t => t.Id.Equals(savedThemeId, StringComparison.OrdinalIgnoreCase));
-
             themeToApply ??= _serviceTabViewModel.AllThemes.FirstOrDefault(t => t.Id == "fluent-dark")
               ?? _serviceTabViewModel.AllThemes.FirstOrDefault();
-
             if (themeToApply != null)
             {
                 _serviceTabViewModel.SelectedTheme = themeToApply;
@@ -141,7 +133,6 @@ namespace PlatformLauncher.Presentation.Views
                 Dispatcher.Invoke(() => UpdateSessionLock(isRunning));
                 return;
             }
-
             if (isRunning)
             {
                 ServiceTabHeader.Text = "🔒";
@@ -157,28 +148,24 @@ namespace PlatformLauncher.Presentation.Views
         private void HookTerminalRightClick()
         {
             UnhookTerminalRightClick();
-
             var hwndHosts = TerminalScrollBarStyler.FindVisualChildren<System.Windows.Interop.HwndHost>(ConsoleOutputTerminal.Terminal);
             if (hwndHosts.Count == 0)
             {
                 DebugLogger.Write("HwndHost not found in visual tree");
                 return;
             }
-
             _terminalHwnd = hwndHosts[0].Handle;
             if (_terminalHwnd == IntPtr.Zero)
             {
                 DebugLogger.Write("HwndHost.Handle is zero");
                 return;
             }
-
             _subclassDelegate = new SubClassProcDelegate(TerminalSubclassProc);
             if (!SetWindowSubclass(_terminalHwnd, _subclassDelegate, SUBCLASS_ID, IntPtr.Zero))
             {
                 DebugLogger.Write($"SetWindowSubclass failed: {Marshal.GetLastWin32Error()}");
                 return;
             }
-
             DebugLogger.Write($"Terminal hwnd subclassed: {_terminalHwnd}");
         }
 
@@ -201,21 +188,48 @@ namespace PlatformLauncher.Presentation.Views
                 {
                     if (ConsoleOutputTerminal.ContextMenu != null)
                     {
+                        // Обновляем состояние пунктов перед открытием
+                        if (DataContext is MainViewModel vm)
+                        {
+                            vm.RefreshPythonStatus();
+                            foreach (var item in ConsoleOutputTerminal.ContextMenu.Items)
+                            {
+                                if (item is MenuItem mi && mi.Header?.ToString() != "Очистить")
+                                {
+                                    mi.IsEnabled = vm.IsPythonValid;
+                                    mi.InvalidateVisual();
+                                }
+                            }
+                            ConsoleOutputTerminal.ContextMenu.UpdateLayout();
+                        }
+
                         ConsoleOutputTerminal.ContextMenu.DataContext = DataContext;
                         ConsoleOutputTerminal.ContextMenu.IsOpen = true;
                     }
                 }));
                 return IntPtr.Zero;
             }
-
             return DefSubclassProc(hWnd, msg, wParam, lParam);
         }
 
         private void ConsoleOutputTerminal_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            if (ConsoleOutputTerminal.ContextMenu != null)
+            if (DataContext is MainViewModel vm)
             {
-                ConsoleOutputTerminal.ContextMenu.DataContext = DataContext;
+                vm.RefreshPythonStatus();
+
+                if (ConsoleOutputTerminal.ContextMenu != null)
+                {
+                    foreach (var item in ConsoleOutputTerminal.ContextMenu.Items)
+                    {
+                        if (item is MenuItem mi && mi.Header?.ToString() != "Очистить")
+                        {
+                            mi.IsEnabled = vm.IsPythonValid;
+                            mi.InvalidateVisual(); // принудительная перерисовка
+                        }
+                    }
+                    ConsoleOutputTerminal.ContextMenu.UpdateLayout();
+                }
             }
         }
 
@@ -224,7 +238,6 @@ namespace PlatformLauncher.Presentation.Views
             Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.Background,
                 new Action(_themeService.ApplyTerminalScrollBarStyle));
-
             Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.ApplicationIdle,
                 new Action(() =>
@@ -257,21 +270,30 @@ namespace PlatformLauncher.Presentation.Views
 
         private void ListBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is ListBox listBox)
-            {
-                var dependencyObject = e.OriginalSource as DependencyObject;
-                if (dependencyObject != null)
-                {
-                    var listBoxItem = FindVisualParent<ListBoxItem>(dependencyObject);
-                    if (listBoxItem == null)
-                    {
-                        listBox.SelectedItem = null;
+            if (sender is not ListBox listBox) return;
 
-                        // Убираем фокус из TextBox поиска при клике по пустому месту
-                        Keyboard.ClearFocus();
-                        FocusManager.SetFocusedElement(FocusManager.GetFocusScope(listBox), null);
-                    }
-                }
+            // Получаем элемент под курсором
+            var dependencyObject = e.OriginalSource as DependencyObject;
+            ListBoxItem? listBoxItem = null;
+            if (dependencyObject != null)
+            {
+                listBoxItem = FindVisualParent<ListBoxItem>(dependencyObject);
+            }
+
+            if (listBoxItem == null)
+            {
+                // Клик по пустому месту – сбрасываем выделение
+                Application.Current.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Background,
+                    new Action(() =>
+                    {
+                        if (listBox.SelectedItem != null)
+                        {
+                            listBox.SelectedItem = null;
+                            Keyboard.ClearFocus();
+                            FocusManager.SetFocusedElement(FocusManager.GetFocusScope(listBox), null);
+                        }
+                    }));
             }
         }
 
@@ -279,15 +301,12 @@ namespace PlatformLauncher.Presentation.Views
         {
             if (e.AddedItems.Count > 0 && e.AddedItems[0] is TabItem tab && tab.Header?.ToString() == "Фиксы")
             {
-                // Даем время на полное переключение вкладки
                 Dispatcher.BeginInvoke(
                     System.Windows.Threading.DispatcherPriority.Background,
                     new Action(() =>
                     {
                         Keyboard.ClearFocus();
                         FocusManager.SetFocusedElement(FocusManager.GetFocusScope(this), null);
-
-                        // Явно устанавливаем фокус на ListBox с играми
                         var gamesListBox = FindName("GamesListBox") as ListBox;
                         if (gamesListBox != null)
                         {
@@ -297,45 +316,69 @@ namespace PlatformLauncher.Presentation.Views
             }
         }
 
-        private void ListBox_PreviewMouseRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void ListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is ListBox listBox && e.OriginalSource is DependencyObject source)
-            {
-                var listBoxItem = FindVisualParent<ListBoxItem>(source);
-                if (listBoxItem != null)
-                {
-                    listBoxItem.IsSelected = true;
+            if (sender is not ListBox listBox) return;
 
-                    // для monitor — отдельное меню
-                    if (listBoxItem.DataContext is GamePreset preset && preset.Id == "monitor")
-                    {
-                        var menu = new ContextMenu
-                        {
-                            DataContext = DataContext
-                        };
-                        menu.Items.Add(new MenuItem
-                        {
-                            Header = "Мониторинг",
-                            Command = (DataContext as MainViewModel)?.MonitorCommand
-                        });
-                        menu.Items.Add(new MenuItem
-                        {
-                            Header = "Свойства",
-                            Command = (DataContext as MainViewModel)?.PropertiesCommand
-                        });
-                        listBoxItem.ContextMenu = menu;
-                    }
-                    else
-                    {
-                        // стандартное меню (берётся из XAML-стиля)
-                        listBoxItem.ClearValue(ListBoxItem.ContextMenuProperty);
-                    }
-                }
-                else
-                {
-                    listBox.SelectedItem = null;
-                }
+            var dependencyObject = e.OriginalSource as DependencyObject;
+            ListBoxItem? listBoxItem = null;
+            if (dependencyObject != null)
+            {
+                listBoxItem = FindVisualParent<ListBoxItem>(dependencyObject);
             }
+
+            if (listBoxItem == null)
+            {
+                listBox.SelectedItem = null;
+                return;
+            }
+
+            listBoxItem.IsSelected = true;
+            var preset = listBoxItem.DataContext as GamePreset;
+            var vm = DataContext as MainViewModel;
+            if (vm == null) return;
+
+            var menu = new ContextMenu { DataContext = vm };
+
+            var startItem = new MenuItem
+            {
+                Header = vm.StartButtonText,
+                Command = vm.StartCommand,
+                IsEnabled = vm.CanStart
+            };
+            menu.Items.Add(startItem);
+
+            if (preset?.Id != "monitor")
+            {
+                var installPorts = new MenuItem
+                {
+                    Header = "Установить порты",
+                    Command = vm.PortsToggleCommand,
+                    Visibility = vm.CanInstallPorts ? Visibility.Visible : Visibility.Collapsed
+                };
+                menu.Items.Add(installPorts);
+
+                var uninstallPorts = new MenuItem
+                {
+                    Header = "Удалить порты",
+                    Command = vm.PortsToggleCommand,
+                    Visibility = vm.CanUninstallPorts ? Visibility.Visible : Visibility.Collapsed
+                };
+                menu.Items.Add(uninstallPorts);
+
+                menu.Items.Add(new Separator());
+            }
+
+            var propsItem = new MenuItem
+            {
+                Header = "Свойства",
+                Command = vm.PropertiesCommand,
+                IsEnabled = vm.CanShowProperties
+            };
+            menu.Items.Add(propsItem);
+
+            listBoxItem.ContextMenu = menu;
+            menu.IsOpen = true;
         }
 
         private void SearchTextBox_GotFocus(object sender, RoutedEventArgs e)
@@ -350,15 +393,12 @@ namespace PlatformLauncher.Presentation.Views
 
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            // Обрезка при вставке из буфера (MaxLength не всегда срабатывает при Paste)
             if (SearchTextBox.Text.Length > 16)
             {
                 int caretIndex = SearchTextBox.CaretIndex;
                 SearchTextBox.Text = SearchTextBox.Text.Substring(0, 16);
                 SearchTextBox.CaretIndex = Math.Min(caretIndex, 16);
-                // Рекурсивный вызов TextChanged безопасен — длина уже <= 16
             }
-
             UpdatePlaceholderVisibility();
             UpdateClearButtonVisibility();
         }
@@ -390,11 +430,11 @@ namespace PlatformLauncher.Presentation.Views
 
         private T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
         {
+            if (child == null) return null;
             DependencyObject current = VisualTreeHelper.GetParent(child);
             while (current != null)
             {
-                if (current is T found)
-                    return found;
+                if (current is T found) return found;
                 current = VisualTreeHelper.GetParent(current);
             }
             return null;
@@ -404,13 +444,9 @@ namespace PlatformLauncher.Presentation.Views
         {
             if (FiltersExpander == null || !FiltersExpander.IsExpanded)
                 return;
-
-            // Проверяем, был ли клик внутри Expander с фильтрами
             var source = e.OriginalSource as DependencyObject;
             if (source != null && IsChildOf(source, FiltersExpander))
-                return; // Клик внутри фильтров — не сворачиваем
-
-            // Клик вне фильтров — сворачиваем
+                return;
             FiltersExpander.IsExpanded = false;
         }
 

@@ -12,7 +12,6 @@ namespace PlatformLauncher.Infrastructure.Services
     {
         private readonly IUpdateService _updateService;
         private readonly ILogger _logger;
-
         public ObservableCollection<GamePreset> Games { get; } = new ObservableCollection<GamePreset>();
 
         public GameListService(IUpdateService updateService, ILogger logger)
@@ -25,12 +24,10 @@ namespace PlatformLauncher.Infrastructure.Services
         {
             var presets = _updateService.LoadPresets();
             Games.Clear();
-
             foreach (var p in presets)
             {
                 string configPath = Path.Combine(
                     AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{p.Id}.yaml");
-
                 bool isValid = false;
                 if (File.Exists(configPath))
                 {
@@ -44,7 +41,6 @@ namespace PlatformLauncher.Infrastructure.Services
                         isValid = false;
                     }
                 }
-
                 p.ConfigDownloaded = isValid;
                 Games.Add(p);
             }
@@ -60,7 +56,6 @@ namespace PlatformLauncher.Infrastructure.Services
             var allPresets = _updateService.LoadPresets();
             IEnumerable<GamePreset> filtered = allPresets.AsEnumerable();
 
-            // Фильтр по поиску
             if (!string.IsNullOrWhiteSpace(searchText))
             {
                 string search = searchText.ToLower();
@@ -69,17 +64,15 @@ namespace PlatformLauncher.Infrastructure.Services
                     p.Id.ToLower().Contains(search));
             }
 
-            // Фильтр по статусу установки (взаимоисключающие)
             if (filterInstalled)
                 filtered = filtered.Where(p => p.Installed);
             else if (filterNotInstalled)
                 filtered = filtered.Where(p => !p.Installed);
 
-            // Фильтр "Пользовательские" (локальные)
+            // ✅ ИСПРАВЛЕНИЕ: Используем IsUserPreset вместо проверки наличия файла
             if (filterCustom)
-                filtered = filtered.Where(p => IsLocal(p.Id));
+                filtered = filtered.Where(p => p.IsUserPreset);
 
-            // Сортировка
             List<GamePreset> list = sortOptionId switch
             {
                 "alphabetical" => filtered.OrderBy(p => p.Name).ToList(),
@@ -103,13 +96,6 @@ namespace PlatformLauncher.Infrastructure.Services
             return shown == total
                 ? $"Фильтры ({shown})"
                 : $"Фильтры (показано {shown} из {total})";
-        }
-
-        private bool IsLocal(string gameId)
-        {
-            string configPath = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{gameId}.yaml");
-            return File.Exists(configPath);
         }
     }
 }

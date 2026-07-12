@@ -2,16 +2,10 @@
 using PlatformLauncher.Helpers;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace PlatformLauncher.Infrastructure.Network
 {
-    /// <summary>
-    /// Управление правилами портов брандмауэра Windows через netsh и PowerShell.
-    /// Узкое место: создание процесса Process.Start() + ожидание выхода — блокирующее валидирование (process.WaitForExitAsync) на больших списках портов.
-    /// </summary>
     public class PortsManager : IPortsManager
     {
         private readonly ILogger _logger;
@@ -93,6 +87,37 @@ namespace PlatformLauncher.Infrastructure.Network
             }
         }
 
+        public async Task<(bool HasRules, string Error)> CheckRulesExistAsync(string gameId)
+        {
+            try
+            {
+                string psCmd = $"(Get-NetFirewallRule -DisplayName \"GameFix_{gameId}_*\" | Measure-Object).Count";
+                string args = $"-NoProfile -Command \"{psCmd}\"";
+
+                var (exitCode, output, error) = await ProcessHelper.RunAsync("powershell", args, _logger, timeoutMs: 5000);
+
+                if (exitCode != 0)
+                {
+                    _logger.Warning($"Ошибка проверки правил: {error}");
+                    return (false, error);
+                }
+
+                if (int.TryParse(output.Trim(), out int count))
+                {
+                    bool hasRules = count > 0;
+                    _logger.Info($"Найдено {count} правил для {gameId}");
+                    return (hasRules, string.Empty);
+                }
+
+                return (false, "Не удалось распарсить вывод PowerShell");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Ошибка проверки правил для {gameId}: {ex}");
+                return (false, ex.Message);
+            }
+        }
+
         private async Task AddSingleRuleAsync(string portSpec, string protocol, string gameId)
         {
             string name = $"GameFix_{gameId}_{protocol}_{portSpec}";
@@ -106,24 +131,16 @@ namespace PlatformLauncher.Infrastructure.Network
 
         private async Task RunNetshAsync(string arguments)
         {
-            var (exitCode, output, error) = await ProcessHelper.RunAsync("netsh", arguments, _logger);
+            var (exitCode, _, error) = await ProcessHelper.RunAsync("netsh", arguments, _logger);
             if (exitCode != 0)
-            {
-                _logger.Error($"netsh exit {exitCode}, error: {error}");
                 throw new Exception($"netsh failed: {error}");
-            }
-            _logger.Info($"netsh output: {output}");
         }
 
         private async Task RunPowerShellAsync(string arguments)
         {
-            var (exitCode, output, error) = await ProcessHelper.RunAsync("powershell", arguments, _logger);
+            var (exitCode, _, error) = await ProcessHelper.RunAsync("powershell", arguments, _logger);
             if (exitCode != 0)
-            {
-                _logger.Error($"PowerShell exit {exitCode}, error: {error}");
                 throw new Exception($"PowerShell failed: {error}");
-            }
-            _logger.Info($"PowerShell output: {output}");
         }
     }
 }
