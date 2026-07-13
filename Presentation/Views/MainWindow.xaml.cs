@@ -299,20 +299,26 @@ namespace PlatformLauncher.Presentation.Views
 
         private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (e.AddedItems.Count > 0 && e.AddedItems[0] is TabItem tab && tab.Header?.ToString() == "Фиксы")
+            if (e.AddedItems.Count > 0 && e.AddedItems[0] is TabItem tab)
             {
-                Dispatcher.BeginInvoke(
-                    System.Windows.Threading.DispatcherPriority.Background,
-                    new Action(() =>
-                    {
-                        Keyboard.ClearFocus();
-                        FocusManager.SetFocusedElement(FocusManager.GetFocusScope(this), null);
-                        var gamesListBox = FindName("GamesListBox") as ListBox;
-                        if (gamesListBox != null)
+                var header = tab.Header?.ToString();
+                if (header == "Фиксы" || header == "Настройки")
+                {
+                    // Останавливаем таймер WARP, если он запущен
+                    _serviceTabViewModel?.StopWarpStatusMonitoring();
+                }
+                if (header == "Фиксы")
+                {
+                    Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() =>
                         {
-                            gamesListBox.Focus();
-                        }
-                    }));
+                            Keyboard.ClearFocus();
+                            FocusManager.SetFocusedElement(FocusManager.GetFocusScope(this), null);
+                            var gamesListBox = FindName("GamesListBox") as ListBox;
+                            if (gamesListBox != null) gamesListBox.Focus();
+                        }));
+                }
             }
         }
 

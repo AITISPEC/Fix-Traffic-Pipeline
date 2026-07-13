@@ -9,5 +9,6 @@ namespace PlatformLauncher.Domain.Models
         public bool FilterNotInstalled { get; set; }
         public bool FilterCustom { get; set; }
         public string ListsPath { get; set; } = string.Empty;
+        public string SelectedSortOptionId { get; set; } = "alphabetical";
     }
 }

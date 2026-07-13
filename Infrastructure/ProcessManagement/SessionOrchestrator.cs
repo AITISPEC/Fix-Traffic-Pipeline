@@ -59,7 +59,20 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
             // — OutputReceived → перенаправляем дальше в UI;
             // — ProcessExited → OnProcessExited, которая завершает сессию.
             _pythonManager.OutputReceived += msg => OutputReceived?.Invoke(msg);
-            _pythonManager.ProcessExited += OnProcessExited;
+            _pythonManager.ProcessExited += (int exitCode) => _ = HandleProcessExitedAsync(exitCode);
+        }
+
+        private async Task HandleProcessExitedAsync(int exitCode)
+        {
+            try
+            {
+                await OnProcessExitedAsync(exitCode);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Критическая ошибка в обработчике завершения", ex);
+                try { SessionEnded?.Invoke(false); } catch { }
+            }
         }
 
         /// <summary>Поток обработки: StartAsync → CreateBackupAsync → Sanitize → EnsureStartedAsync → python.StartAsync.</summary>
@@ -180,8 +193,9 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         }
 
         /// <summary>Поток обработки: ProcessExited → if (sessionEndedRaised) return; _sessionEndedRaised=true → обработка бэкапа.</summary>
-        private async void OnProcessExited(int exitCode)
+        private async Task OnProcessExitedAsync(int exitCode)
         {
+            _logger.Info($"Процесс завершён с кодом {exitCode}, stopRequested={_stopRequested}");
             try
             {
                 // Двойная проверка: если сессия уже завершена, не запускаем логику снова.

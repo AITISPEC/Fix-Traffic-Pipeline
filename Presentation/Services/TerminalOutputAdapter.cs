@@ -1,14 +1,29 @@
 ﻿using EasyWindowsTerminalControl;
 using PlatformLauncher.Core.Interfaces;
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Threading;
 
 namespace PlatformLauncher.Presentation.Services
 {
-    public class TerminalOutputAdapter : ITerminalOutput
+    public class TerminalOutputAdapter : ITerminalOutput, IDisposable
     {
         private EasyTerminalControl? _terminal;
+        private readonly List<string> _buffer = new List<string>();
+        private readonly DispatcherTimer _flushTimer;
+        private readonly object _bufferLock = new object();
+        private bool _disposed;
+
+        public TerminalOutputAdapter()
+        {
+            _flushTimer = new DispatcherTimer(DispatcherPriority.Background, Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(100)
+            };
+            _flushTimer.Tick += (s, e) => FlushBuffer();
+            _flushTimer.Start();
+        }
 
         public void AttachTerminal(EasyTerminalControl terminal)
         {
@@ -17,18 +32,18 @@ namespace PlatformLauncher.Presentation.Services
 
         public void WriteLine(string line)
         {
-            if (string.IsNullOrEmpty(line))
+            if (string.IsNullOrEmpty(line) || _disposed)
                 return;
 
             if (Application.Current != null && Application.Current.Dispatcher != null)
             {
                 if (Application.Current.Dispatcher.CheckAccess())
                 {
-                    WriteLineInternal(line);
+                    AddToBuffer(line);
                 }
                 else
                 {
-                    Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => WriteLineInternal(line)));
+                    Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => AddToBuffer(line)));
                 }
             }
             else
@@ -37,12 +52,30 @@ namespace PlatformLauncher.Presentation.Services
             }
         }
 
-        private void WriteLineInternal(string line)
+        private void AddToBuffer(string line)
         {
-            // Исправлено: добавлена проверка на null
+            lock (_bufferLock)
+            {
+                _buffer.Add(line);
+                if (_buffer.Count >= 50)
+                    FlushBuffer();
+            }
+        }
+
+        private void FlushBuffer()
+        {
+            List<string> lines;
+            lock (_bufferLock)
+            {
+                if (_buffer.Count == 0) return;
+                lines = new List<string>(_buffer);
+                _buffer.Clear();
+            }
+
             if (_terminal?.ConPTYTerm != null)
             {
-                _terminal.ConPTYTerm.WriteToUITerminal(line + Environment.NewLine);
+                string text = string.Join(Environment.NewLine, lines) + Environment.NewLine;
+                _terminal.ConPTYTerm.WriteToUITerminal(text);
             }
         }
 
@@ -63,8 +96,20 @@ namespace PlatformLauncher.Presentation.Services
 
         private void ClearInternal()
         {
+            lock (_bufferLock)
+            {
+                _buffer.Clear();
+            }
             if (_terminal?.ConPTYTerm != null)
                 _terminal.ConPTYTerm.ClearUITerminal(true);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _flushTimer?.Stop();
+            FlushBuffer();
         }
     }
 }

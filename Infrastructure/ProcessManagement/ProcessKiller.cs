@@ -1,7 +1,9 @@
-﻿using System;
+﻿using PlatformLauncher.Core.Interfaces;
+using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
-using PlatformLauncher.Core.Interfaces;
+using System.Threading.Tasks;
 
 namespace PlatformLauncher.Infrastructure.ProcessManagement
 {
@@ -21,62 +23,55 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         /// <summary>Поток обработки: GetProcessesByName("python") → foreach → Kill(entireProcessTree=true). </summary>
         public void KillPythonVenvProcesses()
         {
-            // Process.GetProcessesByName — асинхронно не работает, блокирует до получения списка.
-            var processes = Process.GetProcessesByName("python");
-            foreach (var proc in processes)
+            var processes = Process.GetProcessesByName("python")
+                .Where(p => !p.HasExited && p.MainModule?.FileName?.Contains(".venv", StringComparison.OrdinalIgnoreCase) == true)
+                .ToList();
+            if (!processes.Any()) return;
+            foreach (var p in processes)
             {
-                using (proc)
+                try
                 {
-                    try
-                    {
-                        // Double-check pattern: если процесс уже завершён между проверкой и Kill(), не пытаемся убить снова.
-                        if (proc.HasExited) continue;
-
-                        string? fileName = proc.MainModule?.FileName;
-                        // Идентификация процесса через .venv в имени модуля — гарантирует, что это наше окружение.
-                        if (!string.IsNullOrEmpty(fileName) && fileName.Contains(".venv", StringComparison.OrdinalIgnoreCase))
-                        {
-                            proc.Kill(entireProcessTree: true);  // Убиваем дерево процессов (потомки тоже).
-                            proc.WaitForExit(2000);  // Ждём завершения — узкое место.
-                            _logger.Info($"Убит python (venv) PID {proc.Id}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Ошибка при завершении python PID {proc.Id}: {ex.Message}");
-                    }
+                    p.Kill(entireProcessTree: true);
+                    _logger.Info($"Процесс Python {p.Id} убит");
+                }
+                catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
+                {
+                    _logger.Warning($"Нет прав на убийство Python {p.Id}");
+                }
+                catch (InvalidOperationException) { }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Ошибка убийства Python {p.Id}", ex);
                 }
             }
+            Task.WaitAll(processes.Select(p => p.WaitForExitAsync()).ToArray(), 2000);
         }
 
         /// <summary>Убийство процесса winws.exe по конкретному пути — узкое место: WaitforExit(2000).</summary>
         public void KillWinwsProcess(string expectedPath)
         {
-            // Process.GetProcessesByName("winws") — поиск всех процессов с именем winws (включая запущенные напрямую).
-            var processes = Process.GetProcessesByName("winws");
-            foreach (var proc in processes)
+            var processes = Process.GetProcessesByName("winws")
+                .Where(p => !p.HasExited && string.Equals(p.MainModule?.FileName, expectedPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (!processes.Any()) return;
+            foreach (var p in processes)
             {
-                using (proc)
+                try
                 {
-                    try
-                    {
-                        if (proc.HasExited) continue;
-
-                        string? exePath = proc.MainModule?.FileName;
-                        // Точное совпадение по пути — гарантируем, что убиваем наш winws.exe.
-                        if (string.Equals(exePath, expectedPath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            proc.Kill();  // Жёсткое завершение без таймаута — может повлиять на зависшие процессы.
-                            proc.WaitForExit(2000);
-                            _logger.Info($"Убит winws.exe PID {proc.Id}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Ошибка при завершении winws PID {proc.Id}: {ex.Message}");
-                    }
+                    p.Kill();
+                    _logger.Info($"Процесс winws {p.Id} убит");
+                }
+                catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
+                {
+                    _logger.Warning($"Нет прав на убийство winws {p.Id}");
+                }
+                catch (InvalidOperationException) { }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Ошибка убийства winws {p.Id}", ex);
                 }
             }
+            Task.WaitAll(processes.Select(p => p.WaitForExitAsync()).ToArray(), 2000);
         }
 
         /// <summary>Убийство всех управляемых процессов — узкое место: параллельные вызовы KillPythonVenvProcesses() и killWinwsProcess().</summary>

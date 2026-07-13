@@ -26,6 +26,8 @@ namespace PlatformLauncher.Infrastructure.Services
             Games.Clear();
             foreach (var p in presets)
             {
+                if (p.Id == "monitor") continue;
+
                 string configPath = Path.Combine(
                     AppDomain.CurrentDomain.BaseDirectory, "data", "configs", $"{p.Id}.yaml");
                 bool isValid = false;
@@ -54,7 +56,9 @@ namespace PlatformLauncher.Infrastructure.Services
             string sortOptionId)
         {
             var allPresets = _updateService.LoadPresets();
-            IEnumerable<GamePreset> filtered = allPresets.AsEnumerable();
+            IEnumerable<GamePreset> filtered = allPresets
+                .Where(p => p.Id != "monitor")
+                .AsEnumerable();
 
             if (!string.IsNullOrWhiteSpace(searchText))
             {

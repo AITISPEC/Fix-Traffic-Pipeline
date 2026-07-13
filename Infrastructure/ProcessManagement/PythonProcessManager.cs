@@ -126,43 +126,56 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         {
             if (_process == null || _process.HasExited) return;
 
+            _logger.Info("Остановка Python-процесса...");
+            // создаём флаг
             if (!string.IsNullOrEmpty(_listsPath))
             {
                 var flagPath = Path.Combine(_listsPath, ".stop_monitor");
-                try { File.WriteAllText(flagPath, "stop"); }
-                catch (Exception ex) { _logger.Warning($"Не удалось создать флаг остановки: {ex.Message}"); }
+                try { await File.WriteAllTextAsync(flagPath, "stop"); }
+                catch (Exception ex) { _logger.Warning($"Не удалось создать флаг: {ex.Message}"); }
             }
 
             try
             {
-                _process.StandardInput.WriteLine("exit");
+                if (_process.StandardInput.BaseStream.CanWrite)
+                {
+                    await _process.StandardInput.WriteLineAsync("exit");
+                    _logger.Info("Отправлена команда exit");
+                }
+
                 var exitTask = _process.WaitForExitAsync();
                 if (await Task.WhenAny(exitTask, Task.Delay(timeoutMs)) != exitTask)
                 {
+                    _logger.Warning($"Таймаут {timeoutMs} мс, принудительное убийство");
                     _process.Kill(entireProcessTree: true);
                     await _process.WaitForExitAsync();
+                    _logger.Info("Процесс убит");
                 }
+                else
+                    _logger.Info("Процесс завершился корректно");
             }
             catch (InvalidOperationException)
             {
-                // Процесс уже завершился – игнорируем
+                _logger.Info("Процесс уже завершён");
             }
             catch (Exception ex)
             {
-                _logger.Error($"Ошибка при остановке Python", ex);
-                try { _process.Kill(); }
-                catch (Exception killEx) { _logger.Warning($"Не удалось принудительно завершить Python: {killEx.Message}"); }
+                _logger.Error("Ошибка остановки", ex);
+                try { _process.Kill(entireProcessTree: true); }
+                catch (Exception killEx) { _logger.Warning($"Не удалось убить: {killEx.Message}"); }
             }
             finally
             {
+                // удаляем флаг
                 if (!string.IsNullOrEmpty(_listsPath))
                 {
                     var flagPath = Path.Combine(_listsPath, ".stop_monitor");
                     try { if (File.Exists(flagPath)) File.Delete(flagPath); }
-                    catch (Exception ex) { _logger.Warning($"Не удалось удалить флаг остановки: {ex.Message}"); }
+                    catch (Exception ex) { _logger.Warning($"Не удалось удалить флаг: {ex.Message}"); }
                 }
                 _process?.Dispose();
                 _process = null;
+                _logger.Info("Python-процесс освобождён");
             }
         }
     }

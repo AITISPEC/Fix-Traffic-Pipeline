@@ -11,5 +11,7 @@
         // Фильтры
         (bool Installed, bool NotInstalled, bool Custom) GetFilterState();
         void SetFilterState(bool installed, bool notInstalled, bool custom);
+        string GetSelectedSortOption();
+        void SetSelectedSortOption(string optionId);
     }
 }

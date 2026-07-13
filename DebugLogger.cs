@@ -18,7 +18,9 @@ namespace PlatformLauncher
 
         public static void Write(string message)
         {
-            if (!_enabled) return;
+            bool isError = message.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase);
+            if (!_enabled && !isError) return;
+
             try
             {
                 lock (Lock)

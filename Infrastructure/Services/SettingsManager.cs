@@ -126,5 +126,16 @@ namespace PlatformLauncher.Infrastructure.Services
             config.SelectedTheme = themeId;
             _appConfigService.Save(config);
         }
+
+        public string GetSelectedSortOption()
+        {
+            return _settings.SelectedSortOptionId ?? "alphabetical";
+        }
+
+        public void SetSelectedSortOption(string optionId)
+        {
+            _settings.SelectedSortOptionId = optionId;
+            Save();
+        }
     }
 }

@@ -217,7 +217,16 @@ namespace PlatformLauncher.Presentation.ViewModels
         public SortOption SelectedSortOption
         {
             get => _selectedSortOption;
-            set { if (_selectedSortOption != value) { _selectedSortOption = value; OnPropertyChanged(); ApplyFilters(); } }
+            set
+            {
+                if (_selectedSortOption != value)
+                {
+                    _selectedSortOption = value;
+                    OnPropertyChanged();
+                    _settingsManager.SetSelectedSortOption(value.Id);
+                    ApplyFilters();
+                }
+            }
         }
 
         public string StartButtonText
@@ -328,7 +337,8 @@ namespace PlatformLauncher.Presentation.ViewModels
 
             _sessionOrchestrator.OutputReceived += msg => _terminal.WriteLine(msg);
             _sessionOrchestrator.SessionEnded += OnSessionEnded;
-            _selectedSortOption = SortOptions[0];
+            string savedSort = _settingsManager.GetSelectedSortOption();
+            _selectedSortOption = SortOptions.FirstOrDefault(o => o.Id == savedSort) ?? SortOptions.First(o => o.Id == "alphabetical");
             OnPropertyChanged(nameof(SelectedSortOption));
             OnPropertyChanged(nameof(StartButtonText));
             OnPropertyChanged(nameof(CanStart));
@@ -499,14 +509,14 @@ namespace PlatformLauncher.Presentation.ViewModels
                 string pythonExe = _pythonValidator.GetPythonPath();
                 if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
                 {
-                    _terminal.WriteLine("⚠️ Python не найден или не установлен\n   Перейдите в Сервис -> Python, чтобы устранить неисправность"); return;
+                    _terminal.WriteLine("⚠️ Перейдите в Сервис -> Python"); return;
                 }
 
                 if (!monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
                 { _terminal.WriteLine("❌ Папка lists не существует или не выбрана."); return; }
 
                 if (monitorOnly && (string.IsNullOrEmpty(ListsPath) || !Directory.Exists(ListsPath)))
-                    _terminal.WriteLine("⚠️ Мониторинг без папки lists (только просмотр соединений)");
+                    _terminal.WriteLine("⚠️ Мониторинг без записи в листы (только просмотр)");
 
                 _terminal.Clear();
                 bool warpEnabled = _settingsManager.GetWarpEnabled(SelectedGame.Id);

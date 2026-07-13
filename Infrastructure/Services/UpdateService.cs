@@ -23,10 +23,15 @@ namespace PlatformLauncher.Infrastructure.Services
             _logger = logger;
             var handler = new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+                SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
+                UseProxy = false,
+                Proxy = null,
+                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
             };
             _httpClient = new HttpClient(handler);
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "PlatformLauncher/1.0");
+            _httpClient.Timeout = TimeSpan.FromSeconds(30);
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             _presetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs", "presets.yaml");
             _configsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "configs");
             _appConfigService = appConfigService;
@@ -49,6 +54,28 @@ namespace PlatformLauncher.Infrastructure.Services
                 _logger.Error($"Ошибка загрузки presets.yaml: {ex.Message}");
                 return new PresetsFile();
             }
+        }
+
+        private async Task<string> DownloadWithRetryAsync(string url, int maxRetries = 3)
+        {
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
+                {
+                    using var response = await _httpClient.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+                    return await response.Content.ReadAsStringAsync();
+                }
+                catch (Exception ex) when (i < maxRetries - 1)
+                {
+                    _logger.Warning($"Попытка {i + 1} загрузки {url} не удалась: {ex.Message}. Повтор через 2 сек...");
+                    await Task.Delay(2000);
+                }
+            }
+            // Последняя попытка
+            using var lastResponse = await _httpClient.GetAsync(url);
+            lastResponse.EnsureSuccessStatusCode();
+            return await lastResponse.Content.ReadAsStringAsync();
         }
 
         public void SavePresetsFile(PresetsFile presets)

@@ -1,3 +1,4 @@
+using MS.WindowsAPICodePack.Internal;
 using PlatformLauncher.Core.Interfaces;
 using System;
 using System.ComponentModel;
@@ -18,6 +19,7 @@ namespace PlatformLauncher.Infrastructure.Python
         private readonly string _pythonExe;
         private readonly string _venvDir;
         private readonly string _venvPython;
+        private string? _cachedSystemPython;
 
         public PythonEnvironmentManager(ILogger logger)
         {
@@ -69,6 +71,8 @@ namespace PlatformLauncher.Infrastructure.Python
         {
             try
             {
+                if (!string.IsNullOrEmpty(_cachedSystemPython)) return _cachedSystemPython;
+
                 var psi = new ProcessStartInfo("python", "--version")
                 {
                     UseShellExecute = false,
@@ -86,7 +90,10 @@ namespace PlatformLauncher.Infrastructure.Python
                     output = p.StandardOutput.ReadToEnd();
                 }
                 if (output != null)
+                {
+                    _cachedSystemPython = output;
                     return output;
+                }
                 else
                     return string.Empty;
             }
@@ -222,7 +229,7 @@ namespace PlatformLauncher.Infrastructure.Python
 
         public async Task<string> FindPythonViaWhereQuiet()
         {
-            string? registryResult = await FindPythonInRegistry();
+            string? registryResult = FindPythonInRegistry();
             if (string.IsNullOrEmpty(registryResult)) return string.Empty;
 
             // Correct async pattern - don't use Task.Run here
@@ -231,46 +238,14 @@ namespace PlatformLauncher.Infrastructure.Python
             return !string.IsNullOrEmpty(knownPathResult) ? knownPathResult : string.Empty;
         }
 
-        private async Task<string> FindPythonInRegistry()
+        private string? FindPythonInRegistry()
         {
             try
             {
-                string key = @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\\Windows";
-                var psi = new ProcessStartInfo("reg.exe", $"query \"{key}\" /v Software")
-                {
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                using var p = Process.Start(psi);
-                if (p == null)
-                    return string.Empty;
-                p.WaitForExit();
-                if (p.ExitCode != 0) return string.Empty;
-
-                string output = p.StandardOutput.ReadToEnd();
-                // Look for Python paths in registry
-                int pos = output.IndexOf("C:\\");
-                int end = output.IndexOf('\\', pos + 1);
-                while (pos >= 0)
-                {
-                    if (end == -1) return string.Empty;
-
-                    string candidate = output.Substring(pos, end - pos);
-                    if (candidate.Contains("python") || candidate.Contains(".exe"))
-                    {
-                        try { File.Exists(candidate); }  catch { } }
-                    return candidate;
-                }
-                // Find next 'C:\\'
-                pos = output.IndexOf('\\', end + 1);
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Python\PythonCore\3.13\InstallPath");
+                return key?.GetValue("ExecutablePath")?.ToString();
             }
-            catch (Exception ex)
-            {
-                _logger.Warning($"Registry Python search failed: {ex}");
-                return string.Empty;
-            }
-            return string.Empty;
+            catch { return null; }
         }
 
         private async Task<string> FindPythonInKnownPaths()

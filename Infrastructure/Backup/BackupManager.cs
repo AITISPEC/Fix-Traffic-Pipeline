@@ -175,46 +175,26 @@ namespace PlatformLauncher.Infrastructure.Backup
         /// <summary>Копирует файлы через Process.Start — работает на любом OS.</summary>
         private void CopyDirectorySafe(string source, string destination)
         {
-            // Служебные файлы, которые не должны копироваться
-            var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ".restored",
-                ".norestored",
-                ".saved"
-            };
+            var excludedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".restored", ".norestored", ".saved" };
 
-            foreach (string? dirPath in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+            // Создать все поддиректории
+            foreach (var dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
             {
-                string relative = Path.GetRelativePath(source, dirPath);
-                string newDir = Path.Combine(destination, relative);
-                Directory.CreateDirectory(newDir);
+                string rel = Path.GetRelativePath(source, dir);
+                Directory.CreateDirectory(Path.Combine(destination, rel));
             }
 
-            foreach (string? filePath in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+            var files = Directory.GetFiles(source, "*", SearchOption.AllDirectories)
+                .Where(f => !excludedFiles.Contains(Path.GetFileName(f)))
+                .ToList();
+
+            Parallel.ForEach(files, file =>
             {
-                string fileName = Path.GetFileName(filePath).ToLowerInvariant();
-
-                // Пропускаем служебные файлы
-                if (excludedFiles.Contains(fileName))
-                    continue;
-
-                if (File.Exists(filePath))
-                {
-                    string? relative = Path.GetRelativePath(source, filePath);
-                    string? newFile = Path.Combine(destination, relative);
-                    try
-                    {
-                        string? dir = Path.GetDirectoryName(newFile);
-                        if (!string.IsNullOrEmpty(dir))
-                            Directory.CreateDirectory(dir);
-                        File.Copy(filePath, newFile, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Не удалось скопировать {filePath}: {ex.Message}");
-                    }
-                }
-            }
+                string rel = Path.GetRelativePath(source, file);
+                string dest = Path.Combine(destination, rel);
+                try { File.Copy(file, dest, true); }
+                catch (Exception ex) { _logger.Warning($"Не удалось скопировать {file}: {ex.Message}"); }
+            });
         }
     }
 }

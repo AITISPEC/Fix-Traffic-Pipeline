@@ -1,10 +1,11 @@
-﻿using System;
+﻿using PlatformLauncher.Core.Interfaces;
+using PlatformLauncher.Helpers;
+using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
-using PlatformLauncher.Helpers;
-using PlatformLauncher.Core.Interfaces;
 
 namespace PlatformLauncher.Infrastructure.ProcessManagement
 {
@@ -119,12 +120,15 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         {
             try
             {
+                _logger.Info("Выполнение warp-cli connect");
                 var (exitCode, _, _) = await ProcessHelper.RunAsync("warp-cli", "connect", _logger, timeoutMs: 15000);
-                return exitCode == 0;
+                if (exitCode == 0) { _logger.Info("warp-cli connect успешно"); return true; }
+                _logger.Warning($"warp-cli connect вернул {exitCode}");
+                return false;
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Ошибка запуска WARP: {ex.Message}");
+                _logger.Error("Ошибка при connect", ex);
                 return false;
             }
         }
@@ -147,25 +151,47 @@ namespace PlatformLauncher.Infrastructure.ProcessManagement
         /// <summary>Поток обработки: 1) IsInstalledAsync, 2) InstallAsync (если нужно), 3) File.Exists(warpExe) — проверка существует exe до запуска (баг в коде: if после if).</summary>
         public async Task<bool> EnsureStartedAsync()
         {
+            _logger.Info("Запуск WARP...");
             if (!await IsInstalledAsync())
+            {
                 if (!await InstallAsync())
+                {
+                    _logger.Error("Не удалось установить WARP");
                     return false;
+                }
+            }
 
-            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            string warpExe = Path.Combine(programFiles, "Cloudflare", "Cloudflare WARP", "Cloudflare WARP.exe");
+            string warpExe = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "Cloudflare", "Cloudflare WARP", "Cloudflare WARP.exe");
 
             if (File.Exists(warpExe))
             {
                 bool isRunning = Process.GetProcessesByName("Cloudflare WARP").Length > 0;
                 if (!isRunning)
                 {
-                    try { Process.Start(warpExe); }
-                    catch (Exception ex) { _logger.Warning($"Не удалось запустить Cloudflare WARP.exe: {ex.Message}"); }
+                    try
+                    {
+                        Process.Start(warpExe);
+                        _logger.Info("Cloudflare WARP.exe запущен");
+                    }
+                    catch (Win32Exception ex) when (ex.NativeErrorCode == 5)
+                    {
+                        _logger.Warning("Недостаточно прав для запуска WARP");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error($"Ошибка запуска WARP", ex);
+                    }
                 }
             }
+            else
+                _logger.Warning($"Файл WARP.exe не найден: {warpExe}");
 
             await SetMasqueProtocolAsync();
-            return await ConnectAsync();
+            bool connected = await ConnectAsync();
+            if (!connected) _logger.Error("Не удалось подключиться к WARP");
+            return connected;
         }
 
         /// <summary>Поток обработки: warp-cli status → Contains("Connected") ? "connected" : "disconnected".</summary>

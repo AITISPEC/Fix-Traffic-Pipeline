@@ -13,6 +13,10 @@ namespace PlatformLauncher.AppHost
 {
     public partial class App : Application
     {
+        private static ILogger? _globalLogger;
+
+        public static void SetGlobalLogger(ILogger logger) => _globalLogger = logger;
+
         public App()
         {
             DispatcherUnhandledException += App_DispatcherUnhandledException;
@@ -33,16 +37,18 @@ namespace PlatformLauncher.AppHost
 
         private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
+            _globalLogger?.Error("Необработанное исключение в UI (Dispatcher)", e.Exception);
             DebugLogger.WriteException("DispatcherUnhandledException", e.Exception);
-            MessageBox.Show($"Ошибка UI: {e.Exception.Message}\n\n{e.Exception.StackTrace}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"Ошибка: {e.Exception.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;
         }
 
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             var ex = e.ExceptionObject as Exception;
+            _globalLogger?.Error("Критическая ошибка (AppDomain)", ex ?? new Exception("Unknown"));
             DebugLogger.WriteException("UnhandledException", ex!);
-            MessageBox.Show($"Критическая ошибка: {ex?.Message}\n\n{ex?.StackTrace}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"Критическая ошибка: {ex?.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -65,6 +71,9 @@ namespace PlatformLauncher.AppHost
                 return null;
             };
 
+            System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls13;
+            System.Net.ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+
             base.OnStartup(e);
 
             try
@@ -76,9 +85,14 @@ namespace PlatformLauncher.AppHost
                 }
 
                 var serviceProvider = DiSetup.ConfigureServices();
+                var logger = serviceProvider.GetRequiredService<ILogger>();
+                App.SetGlobalLogger(logger);
+                logger.Info("=== Приложение запущено ===");
+
                 var appConfigService = serviceProvider.GetRequiredService<IAppConfigService>();
                 var config = appConfigService.Load();
                 DebugLogger.SetEnabled(config.Logging?.DebugEnabled ?? false);
+
                 var mainWindow = serviceProvider.GetRequiredService<MainWindow>();
                 MainWindow = mainWindow;
                 mainWindow.Show();
@@ -86,7 +100,7 @@ namespace PlatformLauncher.AppHost
             catch (Exception ex)
             {
                 DebugLogger.WriteException("OnStartup failed", ex);
-                MessageBox.Show($"Ошибка при запуске: {ex.Message}\n\n{ex.StackTrace}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Ошибка при запуске: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
         }
@@ -115,7 +129,7 @@ namespace PlatformLauncher.AppHost
             catch (Exception ex)
             {
                 DebugLogger.WriteException("RestartAsAdministrator", ex);
-                MessageBox.Show($"Не удалось перезапустить приложение с правами администратора: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Не удалось перезапустить с правами администратора: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
             }
         }
